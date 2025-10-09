@@ -2,6 +2,8 @@
 
 # Veloclicks 🚴‍♂️
 
+Linked In : [https://www.linkedin.com/in/patrick-lowry-london]
+
 **A full-stack cycling analytics platform with real-time Strava integration**
 
 [![Next.js](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org/)
@@ -133,7 +135,7 @@ Tech background: Solution Architecture, Technical Delivery Leadership, MSc Data 
 
 Based: London, United Kingdom
 
-Linked In : [www.linkedin.com/in/](https://www.linkedin.com/in/patrick-lowry-london)
+Linked In : [https://www.linkedin.com/in/patrick-lowry-london]
 
 
 ---
