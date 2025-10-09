@@ -20,11 +20,11 @@ Veloclicks is a cycling analytics platform that integrates with Strava to provid
 - Strava integration for activity and data-stream loading
 - Full, tabularised activity inventory, filterable, sortable and searchable across key metrics
 - Visualisation/comparision of activity stats across multiple years
-- Route plottting (with or without background map)
+- Route plotting (with or without background map)
 - Elevation profile for each activity with heart rate, distance and altitude overlay
 - Secure registration and login
 - Automated synchronisation of last 30days activities
-- Automated upload of previous years' activities (occurs in the backgrond following rgistraion)
+- Automated upload of previous years' activities (occurs in the backgrond following registration)
 
 
 **Modern UI/UX**
