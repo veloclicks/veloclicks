@@ -133,6 +133,8 @@ Tech background: Solution Architecture, Technical Delivery Leadership, MSc Data 
 
 Based: London, United Kingdom
 
+Linked In : [www.linkedin.com/in/](https://www.linkedin.com/in/patrick-lowry-london)
+
 
 ---
 
