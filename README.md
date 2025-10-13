@@ -14,19 +14,19 @@ Linked In : [https://www.linkedin.com/in/patrick-lowry-london]
 
 ## Overview
 
-Veloclicks is a cycling analytics platform that integrates with Strava to provide athletes with performance insights and data visualizations. It's built using  modern full-stack technologies and containerized for easy deployment.
+Veloclicks is a cycling analytics platform that integrates with Strava to provide athletes with performance insights and data visualizations. It's built using modern full-stack technologies and containerized for easy deployment.
 
 ## Key Features
 
 **Functionality**
 - Strava integration for activity and data-stream loading
 - Full, tabularised activity inventory, filterable, sortable and searchable across key metrics
-- Visualisation/comparision of activity stats across multiple years
+- Visualisation/comparison of activity stats across multiple years
 - Route plotting (with or without background map)
 - Elevation profile for each activity with heart rate, distance and altitude overlay
 - Secure registration and login
 - Automated synchronisation of last 30days activities
-- Automated upload of previous years' activities (occurs in the backgrond following registration)
+- Automated upload of previous years' activities (occurs in the background following registration)
 
 
 **Modern UI/UX**
@@ -38,9 +38,9 @@ Veloclicks is a cycling analytics platform that integrates with Strava to provid
 ### **Technical Architecture**
 - **Microservices**: Containerized frontend, backend, and worker services
 - **Database**: PostgreSQL with SQLAlchemy ORM and Alembic migrations
-- **Asynchrnous Messaging**: REDIS for Celery message broker integration to load strava activities in the background
+- **Asynchronous Messaging**: REDIS for Celery message broker integration to load strava activities in the background
 - **API Design**: RESTful endpoints
-- **Data Processing**: Optimized coordinate sampling and distance calculations to reduce performance impace
+- **Data Processing**: Optimized coordinate sampling and distance calculations to reduce performance impact
 
 ### **Strava Integration**
 - **OAuth 2.0 Flow**: Complete Strava authorization workflow
@@ -124,12 +124,12 @@ Filterable, Sortable, Searchable Table of Activities
 Activity Details with route and profile
 ![Activity Details](frontend/public/images/activity_details.png)
 
-Year on year comparisoon
+Year on year comparison
 ![Year on year comparison](frontend/public/images/bar_chart.png)
 
 ## Author
 
-Built as a hands-on project to explore modern full-stack development and fill a gap in Strava's capabilities (where its very difficult to filter and sort activities across multiple years - plus their website is very difficult to navigate).
+Built as a hands-on project to explore modern full-stack development and fill a gap in Strava's capabilities (where it's very difficult to filter and sort activities across multiple years - plus their website is very difficult to navigate).
 
 Tech background: Solution Architecture, Technical Delivery Leadership, MSc Data Science & ML (UCL 2024)
 
