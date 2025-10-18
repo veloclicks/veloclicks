@@ -39,7 +39,9 @@
                 "arn:aws:s3:::veloclicks-zappa-deployments",
                 "arn:aws:s3:::veloclicks-zappa-deployments/*",
                 "arn:aws:s3:::veloclicks-zappa-deployments-eu",
-                "arn:aws:s3:::veloclicks-zappa-deployments-eu/*"
+                "arn:aws:s3:::veloclicks-zappa-deployments-eu/*",
+                "arn:aws:s3:::veloclicks-zappa-deployments-eu-west-2",
+                "arn:aws:s3:::veloclicks-zappa-deployments-eu-west-2/*"
             ]
         },
         {
@@ -65,7 +67,8 @@
             ],
             "Resource": [
                 "arn:aws:cloudformation:us-east-1:130813060338:stack/veloclicks-*/*",
-                "arn:aws:cloudformation:eu-west-1:130813060338:stack/veloclicks-*/*"
+                "arn:aws:cloudformation:eu-west-1:130813060338:stack/veloclicks-*/*",
+                "arn:aws:cloudformation:eu-west-2:130813060338:stack/veloclicks-*/*"
             ]
         },
         {
@@ -81,7 +84,8 @@
             ],
             "Resource": [
                 "arn:aws:logs:us-east-1:130813060338:log-group:/aws/lambda/veloclicks-*",
-                "arn:aws:logs:eu-west-1:130813060338:log-group:/aws/lambda/veloclicks-*"
+                "arn:aws:logs:eu-west-1:130813060338:log-group:/aws/lambda/veloclicks-*",
+                "arn:aws:logs:eu-west-2:130813060338:log-group:/aws/lambda/veloclicks-*"
             ]
         },
         {

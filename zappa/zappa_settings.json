@@ -1,14 +1,15 @@
 {
     "dev": {
         "app_function": "app.__init__.create_app",
-        "aws_region": "eu-west-1",
+        "aws_region": "eu-west-2",
         "project_name": "veloclicks",
         "runtime": "python3.11",
-        "s3_bucket": "veloclicks-zappa-deployments-eu",
+        "s3_bucket": "veloclicks-zappa-deployments-eu-west-2",
         "django_settings": null,
         "environment_variables": {
             "FLASK_APP": "__init__:create_app",
-            "FLASK_ENV": "production"
+            "FLASK_ENV": "production",
+            "DATABASE_URL": "postgresql://neondb_owner:npg_lxWNvFqcM79u@ep-polished-cake-abu71cv2-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
         },
         "keep_warm": false,
         "memory_size": 512,
@@ -18,14 +19,15 @@
     },
     "production": {
         "app_function": "app.__init__.create_app",
-        "aws_region": "eu-west-1",
+        "aws_region": "eu-west-2",
         "project_name": "veloclicks",
         "runtime": "python3.11",
-        "s3_bucket": "veloclicks-zappa-deployments-eu",
+        "s3_bucket": "veloclicks-zappa-deployments-eu-west-2",
         "django_settings": null,
         "environment_variables": {
             "FLASK_APP": "__init__:create_app",
-            "FLASK_ENV": "production"
+            "FLASK_ENV": "production",
+            "DATABASE_URL": "postgresql://neondb_owner:npg_lxWNvFqcM79u@ep-polished-cake-abu71cv2-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
         },
         "keep_warm": false,
         "memory_size": 512,

@@ -63,7 +63,7 @@ def celery_init_app(app: Flask) -> Celery:
 #
 # factory method for flask app
 #
-def create_app(isCelery=False) -> Flask:
+def create_app(isCelery=False, *args, **kwargs) -> Flask:
     app = Flask(__name__)
     
     # load configuration from Config.py
