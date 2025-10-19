@@ -12,12 +12,15 @@ class Config:
         f"{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/{os.getenv('POSTGRES_DB')}"
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SECRET_KEY = os.environ.get('SECRET_KEY')
-    TEST_KEY = os.environ.get('TEST_KEY')
-    
-    BROKER_URL = os.environ.get('BROKER_URL')
-    RESULT_BACKEND = os.environ.get('RESULT_BACKEND')
+    SECRET_KEY = os.getenv('SECRET_KEY')
+    TEST_KEY = os.getenv('TEST_KEY')
+
+    BROKER_URL = os.getenv('BROKER_URL')
+    RESULT_BACKEND = os.getenv('RESULT_BACKEND')
 
     # Demo user configuration
-    DEMO_USERNAME = os.environ.get('DEMO_USERNAME', 'demo@veloclicks.com')
+    DEMO_USERNAME = os.getenv('DEMO_USERNAME', 'demo@veloclicks.com')
+
+    # Celery configuration
+    SKIP_CELERY = os.getenv('SKIP_CELERY', 'false').lower() == 'true'
 
