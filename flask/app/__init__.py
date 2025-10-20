@@ -4,8 +4,6 @@ from flask_migrate import Migrate
 from celery import Celery, Task
 from flask_cors import CORS
 
-
-
 #
 # Test broker connection to redis
 #
@@ -23,7 +21,7 @@ def test_broker_connection(broker_url):
         raise
 
 #
-# initialise celery
+# initialise celery with a Flask instance
 #
 def celery_init_app(app: Flask) -> Celery:
     print('celery_init_app()')
@@ -61,33 +59,32 @@ def celery_init_app(app: Flask) -> Celery:
 # --------------------------------------------------------------
 
 #
-# factory method for flask app
-
+# factory method for flask app - this is the best practise way to create a flask
+# instance but its also called by celery as a celery instance will share code and
+# needs the flask context. For simplicity here, celery runs in the same context
+# and create_app is actually called twice - once by flask and once by celery
+# If its celery I don't instantiate the database as its already there
 #
 def create_app(*args, **kwargs) -> Flask:
-    print(f"create_app() called with args={args}, kwargs={kwargs}")
-
     # Extract parameters from kwargs
-    is_celery = kwargs.get('isCelery', False)
-
+    is_celery   = kwargs.get('isCelery', False)
+    skip_celery = kwargs.get('skipCelery', app.config.get('SKIP_CELERY', False))
+    
+    
     app = Flask(__name__)
 
     # load configuration from Config.py
     from app.config import Config
     app.config.from_object(Config)
 
-    # Get skip_celery from config (can be overridden by kwarg)
-    skip_celery = kwargs.get('skipCelery', app.config.get('SKIP_CELERY', False))
-    print(f"create_app() : skip_celery = {skip_celery}, SKIP_CELERY config = {app.config.get('SKIP_CELERY')}")
 
     # make the app CORS compatible
     CORS(app)
 
     #
-    # ----------- DATABASE INTIIALISATION -----------
+    # --- DATABASE INTIIALISATION - DON"T DO THIS IF THE FLASK APP IS BEING CREATED BY CELERY ----
     #
     if not is_celery:
-        print('create_app() : Initialising database...............')
         from app.model import db
         db.init_app(app)
         migrate = Migrate()
@@ -100,10 +97,9 @@ def create_app(*args, **kwargs) -> Flask:
             from app.models.strava import Activity
 
     #
-    # ----------- CELERY -----------
+    # Create celery instance if requested (don't request from zappa AWS as it won;t work in lambda
     #
     if not skip_celery:
-        print('create_app() : Initialising celery...............')
         app.config.from_mapping(
             CELERY=dict(
                 broker_url="redis://redis:6379/0",
@@ -114,40 +110,27 @@ def create_app(*args, **kwargs) -> Flask:
         app.config.from_prefixed_env()
         celery_app = celery_init_app(app)
         app.extensions["celery"] = celery_app
-    else:
-        print('create_app() : Skipping celery initialization...............')
 
     #
     # ----------- VIEWS AND URL ROUTING -----------
     #
 
-    print('create_app() : Registering blueprints...............')
     # register our blueprints - this should be after db init
-
-    print('create_app() : Importing main_bp...............')
     from app.views.main import main_bp
-    print('create_app() : Registering main_bp...............')
     app.register_blueprint(main_bp, url_prefix='/')
 
-    print('create_app() : Importing api_bp...............')
     from app.views.api import api_bp
-    print('create_app() : Registering api_bp...............')
     app.register_blueprint(api_bp)
 
-    print('create_app() : Importing strava_bp...............')
     from app.views.strava import strava_bp
-    print('create_app() : Registering strava_bp...............')
     app.register_blueprint(strava_bp)
 
-    print('create_app() : All blueprints registered...............')
-
-    # Only configure Celery tasks if Celery is enabled
+    #
+    # If Celery is enabled, create the tasks
+    #
     if not skip_celery:
-        print('create_app() : Configuring celery tasks...............')
-
         @app.route("/test_task/")
         def test_task():
-            print('/test-task/ invoked')
             try:
                 from app import tasks  # Lazy import only when route is called
                 result = tasks.test_task.delay()
@@ -157,14 +140,12 @@ def create_app(*args, **kwargs) -> Flask:
 
         @app.route('/my_task/')
         def my_task():
-            print('/my_task/ invoked')
             try:
                 task = celery_app.send_task('app.tasks.my_task')
                 return jsonify({'task_id': task.id}), 202
             except Exception as e:
                 return jsonify({'error': str(e)}), 500
 
-    print('create_app() : Successfully created app!')
     return app
 
 
