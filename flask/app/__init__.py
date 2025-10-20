@@ -3,6 +3,9 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from celery import Celery, Task
 from flask_cors import CORS
+# Flask-Limiter: Works locally and in Docker, but not compatible with AWS Lambda
+# from flask_limiter import Limiter
+# from flask_limiter.util import get_remote_address
 
 #
 # Test broker connection to redis
@@ -68,18 +71,29 @@ def celery_init_app(app: Flask) -> Celery:
 def create_app(*args, **kwargs) -> Flask:
     # Extract parameters from kwargs
     is_celery   = kwargs.get('isCelery', False)
-    skip_celery = kwargs.get('skipCelery', app.config.get('SKIP_CELERY', False))
-    
-    
+
     app = Flask(__name__)
 
     # load configuration from Config.py
     from app.config import Config
     app.config.from_object(Config)
 
+    # Now we can access app.config for skip_celery
+    skip_celery = kwargs.get('skipCelery', app.config.get('SKIP_CELERY', False))
+
 
     # make the app CORS compatible
     CORS(app)
+
+    # Rate limiting: Works locally and in Docker, but not compatible with AWS Lambda
+    # Consider using API Gateway throttling for Lambda deployments
+    # limiter = Limiter(
+    #     app=app,
+    #     key_func=get_remote_address,
+    #     default_limits=["100 per hour", "20 per minute"],
+    #     storage_uri="memory://",
+    #     strategy="fixed-window"
+    # )
 
     #
     # --- DATABASE INTIIALISATION - DON"T DO THIS IF THE FLASK APP IS BEING CREATED BY CELERY ----
