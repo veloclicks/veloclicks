@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Navigation from '../../components/Navigation';
 import { ChevronUp, ChevronDown, Filter, TrendingUp, Activity, RefreshCw, User } from 'lucide-react';
@@ -7,7 +7,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { useAuth } from '../../contexts/AuthContext';
 import { demoActivitiesData } from '../../data/demoActivities';
 
-const ActivitiesPage = () => {
+const ActivitiesContent = () => {
   const searchParams = useSearchParams();
   const { user } = useAuth();
   const [activities, setActivities] = useState([]);
@@ -535,6 +535,21 @@ const ActivitiesPage = () => {
         }
       `}</style>
     </div>
+  );
+};
+
+const ActivitiesPage = () => {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'hsl(210, 10%, 15%)' }}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p style={{ color: 'hsl(210, 25%, 96.5%)' }}>Loading activities...</p>
+        </div>
+      </div>
+    }>
+      <ActivitiesContent />
+    </Suspense>
   );
 };
 

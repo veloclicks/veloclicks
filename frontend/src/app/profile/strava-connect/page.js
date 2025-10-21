@@ -1,10 +1,10 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Navigation from '../../../components/Navigation';
 import { Check, ArrowRight, Shield, Zap, BarChart3, AlertCircle, ExternalLink, Activity, RefreshCw, User } from 'lucide-react';
 
-const StravaPartnerPage = () => {
+const StravaPartnerContent = () => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState(null);
@@ -351,6 +351,21 @@ const StravaPartnerPage = () => {
         </div>
       </div>
     </div>
+  );
+};
+
+const StravaPartnerPage = () => {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'hsl(210, 10%, 15%)' }}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p style={{ color: 'hsl(210, 25%, 96.5%)' }}>Loading Strava connection...</p>
+        </div>
+      </div>
+    }>
+      <StravaPartnerContent />
+    </Suspense>
   );
 };
 
