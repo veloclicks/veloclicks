@@ -9,7 +9,7 @@ import { demoActivitiesData } from '../../data/demoActivities';
 
 const ActivitiesContent = () => {
   const searchParams = useSearchParams();
-  const { user } = useAuth();
+  const { user, isDemoMode } = useAuth();
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -21,6 +21,14 @@ const ActivitiesContent = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+
+  // Initialize with demo data if in demo mode to prevent API calls during SSG
+  useEffect(() => {
+    if (isDemoMode || localStorage.getItem('demoMode') === 'true') {
+      setActivities(demoActivitiesData);
+      setLoading(false);
+    }
+  }, [isDemoMode]);
 
   // Check for Strava connection success
   useEffect(() => {
@@ -50,8 +58,8 @@ const ActivitiesContent = () => {
     try {
       setLoading(true);
 
-      // Check if demo user - if so, use demo data
-      if (user?.email === process.env.NEXT_PUBLIC_DEMO_EMAIL) {
+      // Check if demo mode - if so, use demo data
+      if (isDemoMode || user?.email === process.env.NEXT_PUBLIC_DEMO_EMAIL || localStorage.getItem('demoMode') === 'true') {
         // Filter demo data by selected years if provided
         let filteredData = demoActivitiesData;
         if (years && years.length > 0) {
@@ -108,7 +116,7 @@ const ActivitiesContent = () => {
 
   useEffect(() => {
     fetchActivities(selectedYears);
-  }, [selectedYears]); // Refetch when years selection changes
+  }, [selectedYears, isDemoMode, user]); // Refetch when years selection changes or auth state changes
 
   // Check for refresh parameter and refetch if present
   useEffect(() => {
