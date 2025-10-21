@@ -28,12 +28,22 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
+  const [isDemoMode, setIsDemoMode] = useState(false);
 
   // Initialize auth state from token on client-side mount
   useEffect(() => {
     const token = localStorage.getItem('authToken');
+    const demoMode = localStorage.getItem('demoMode') === 'true';
 
-    if (token) {
+    if (demoMode) {
+      setIsDemoMode(true);
+      setIsAuthenticated(true);
+      setUser({
+        user_id: 'demo',
+        email: 'demo@veloclicks.com',
+        username: 'demo'
+      });
+    } else if (token) {
       setIsAuthenticated(true);
       const decoded = decodeJWT(token);
 
@@ -46,12 +56,18 @@ export const AuthProvider = ({ children }) => {
     } else {
       setIsAuthenticated(false);
       setUser(null);
+      setIsDemoMode(false);
     }
   }, []);
 
   // Check authentication status and fetch user profile
   const checkAuth = async () => {
     try {
+      // Skip API validation for demo mode
+      if (isDemoMode || localStorage.getItem('demoMode') === 'true') {
+        return;
+      }
+
       const token = localStorage.getItem('authToken');
       if (!token) {
         setIsAuthenticated(false);
@@ -107,11 +123,26 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Demo login function
+  const loginDemo = () => {
+    localStorage.setItem('demoMode', 'true');
+    localStorage.removeItem('authToken'); // Clear any existing token
+    setIsDemoMode(true);
+    setIsAuthenticated(true);
+    setUser({
+      user_id: 'demo',
+      email: 'demo@veloclicks.com',
+      username: 'demo'
+    });
+  };
+
   // Logout function
   const logout = () => {
     localStorage.removeItem('authToken');
+    localStorage.removeItem('demoMode');
     setIsAuthenticated(false);
     setUser(null);
+    setIsDemoMode(false);
   };
 
   // Check auth on mount
@@ -122,7 +153,9 @@ export const AuthProvider = ({ children }) => {
   const value = {
     isAuthenticated,
     user,
+    isDemoMode,
     login,
+    loginDemo,
     logout,
     checkAuth
   };

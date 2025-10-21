@@ -8,12 +8,14 @@ const Navigation = () => {
   const router = useRouter();
   const pathname = usePathname();
   const [isSyncing, setIsSyncing] = useState(false);
-  const { isAuthenticated, user, logout } = useAuth();
+  const { isAuthenticated, user, logout, isDemoMode } = useAuth();
 
-  // Check for auth token on mount - redirect to login if not found
+  // Check for auth token or demo mode on mount - redirect to login if neither found
   useEffect(() => {
     const token = localStorage.getItem('authToken');
-    if (!token) {
+    const demoMode = localStorage.getItem('demoMode') === 'true';
+
+    if (!token && !demoMode) {
       router.push('/login');
       return;
     }
@@ -60,49 +62,51 @@ const Navigation = () => {
                 Activities
               </button>
               
-              <button
-                className="px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:opacity-80 flex items-center space-x-2"
-                style={{ color: colors.mutedForeground }}
-                onClick={async () => {
-                  if (isSyncing) return; // Prevent multiple syncs
+              {!isDemoMode && (
+                <button
+                  className="px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:opacity-80 flex items-center space-x-2"
+                  style={{ color: colors.mutedForeground }}
+                  onClick={async () => {
+                    if (isSyncing) return; // Prevent multiple syncs
 
-                  setIsSyncing(true);
-                  try {
-                    const token = localStorage.getItem('authToken');
-                    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/strava/synch/`, {
-                      headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json',
-                      },
-                    });
-                    if (response.ok) {
-                      const data = await response.json();
-                      if (data.success && data.new_activities > 0) {
-                        // New activities were added, redirect with refresh flag
-                        router.push('/activities?refresh=true');
+                    setIsSyncing(true);
+                    try {
+                      const token = localStorage.getItem('authToken');
+                      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/strava/synch/`, {
+                        headers: {
+                          'Authorization': `Bearer ${token}`,
+                          'Content-Type': 'application/json',
+                        },
+                      });
+                      if (response.ok) {
+                        const data = await response.json();
+                        if (data.success && data.new_activities > 0) {
+                          // New activities were added, redirect with refresh flag
+                          router.push('/activities?refresh=true');
+                        } else {
+                          // No new activities, just go to activities page
+                          router.push('/activities');
+                        }
+
+                        // Show user feedback about sync result
+                        if (data.success) {
+                          alert(data.message);
+                        }
                       } else {
-                        // No new activities, just go to activities page
-                        router.push('/activities');
+                        alert('Sync failed. Please try again.');
                       }
-
-                      // Show user feedback about sync result
-                      if (data.success) {
-                        alert(data.message);
-                      }
-                    } else {
-                      alert('Sync failed. Please try again.');
+                    } catch (error) {
+                      console.error('Sync error:', error);
+                      alert('Sync failed. Please check your connection.');
+                    } finally {
+                      setIsSyncing(false);
                     }
-                  } catch (error) {
-                    console.error('Sync error:', error);
-                    alert('Sync failed. Please check your connection.');
-                  } finally {
-                    setIsSyncing(false);
-                  }
-                }}
-              >
-                <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                <span>Sync</span>
-              </button>
+                  }}
+                >
+                  <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                  <span>Sync</span>
+                </button>
+              )}
               
               <button 
                 className="px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:opacity-80"
@@ -122,21 +126,23 @@ const Navigation = () => {
             {true && (
               <>
                 <div className="flex items-center space-x-2">
-                  <button
-                    className="w-8 h-8 rounded-full flex items-center justify-center transition-colors hover:opacity-80"
-                    style={{
-                      backgroundColor: isActive('/profile') ? colors.primary : colors.muted
-                    }}
-                    onClick={() => router.push('/profile')}
-                    title="Profile"
-                  >
-                    <User className="h-5 w-5" style={{
-                      color: isActive('/profile') ? 'white' : colors.foreground
-                    }} />
-                  </button>
+                  {!isDemoMode && (
+                    <button
+                      className="w-8 h-8 rounded-full flex items-center justify-center transition-colors hover:opacity-80"
+                      style={{
+                        backgroundColor: isActive('/profile') ? colors.primary : colors.muted
+                      }}
+                      onClick={() => router.push('/profile')}
+                      title="Profile"
+                    >
+                      <User className="h-5 w-5" style={{
+                        color: isActive('/profile') ? 'white' : colors.foreground
+                      }} />
+                    </button>
+                  )}
                   {user && (
                     <span className="text-sm font-medium" style={{ color: colors.foreground }}>
-                      {user.email}
+                      {isDemoMode ? 'Demo User' : user.email}
                     </span>
                   )}
                 </div>

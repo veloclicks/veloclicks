@@ -6,7 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 
 const LoginPage = () => {
     const router = useRouter();
-    const { login } = useAuth();
+    const { login, loginDemo } = useAuth();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -291,8 +291,25 @@ const LoginPage = () => {
             </div>
           </div>
 
-          {/* Sign up link */}
-          <div className="mt-6 text-center">
+          {/* Demo and Sign up links */}
+          <div className="mt-6 text-center space-y-3">
+            <button
+              type="button"
+              className="w-full py-2 px-4 rounded-lg font-medium text-sm hover:opacity-90 transition-colors"
+              style={{
+                backgroundColor: colors.accent,
+                color: 'white'
+              }}
+              onClick={() => {
+                // Use the secure demo login function
+                loginDemo();
+                // Redirect directly to activities page
+                router.push('/activities');
+              }}
+            >
+              Try Demo →
+            </button>
+
             <button
               type="button"
               className="font-medium text-sm hover:opacity-80 transition-colors"
