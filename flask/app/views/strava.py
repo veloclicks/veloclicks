@@ -49,6 +49,7 @@ DEFAULT_HISTORY_DAYS    = 2800
 SYNCH_WINDOW_DAYS       = 30
 CLIENT_ID               = os.getenv('STRAVA_CLIENT_ID')
 CLIENT_SECRET           = os.getenv('STRAVA_CLIENT_SECRET')
+FRONTEND_URL            = os.getenv('FRONTEND_URL')
 
 def get_user_id_from_token():
     """Extract user ID from JWT token in Authorization header"""
@@ -86,7 +87,7 @@ def strava_auth():
     error = request.args.get('error')
     if error:
         logging.error(f'Strava OAuth error: {error}')
-        frontend_url = "http://localhost:3000"
+        frontend_url = FRONTEND_URL
         return redirect(f"{frontend_url}/profile/strava-connect?error=access_denied")
 
     # Get authorization code and user state
@@ -95,7 +96,7 @@ def strava_auth():
 
     if not code or not state:
         logging.error('Missing code or state parameter')
-        frontend_url = "http://localhost:3000"
+        frontend_url = FRONTEND_URL
         return redirect(f"{frontend_url}/profile/strava-connect?error=missing_params")
 
     try:
@@ -111,7 +112,7 @@ def strava_auth():
 
         if not response.ok:
             logging.error(f'Strava token exchange failed: {response.text}')
-            frontend_url = "http://localhost:3000"
+            frontend_url = FRONTEND_URL
             return redirect(f"{frontend_url}/profile/strava-connect?error=token_exchange")
 
         token_data = response.json()
@@ -123,7 +124,7 @@ def strava_auth():
         user = User.query.get(int(state))
         if not user:
             logging.error(f'User with id {state} not found')
-            frontend_url = "http://localhost:3000"
+            frontend_url = FRONTEND_URL
             return redirect(f"{frontend_url}/profile/strava-connect?error=user_not_found")
 
         user.strava_access_token = access_token
@@ -133,7 +134,7 @@ def strava_auth():
 
     except Exception as e:
         logging.error(f'Strava OAuth error: {e}')
-        frontend_url = "http://localhost:3000"
+        frontend_url = FRONTEND_URL
         return redirect(f"{frontend_url}/profile/strava-connect?error=connection_failed")
 
     logging.info(f'Strava tokens saved for user {state}, starting activity sync...')
@@ -153,7 +154,7 @@ def strava_auth():
         # Continue anyway - user is connected even if sync failed
 
     # Redirect to activities page with success message
-    frontend_url = "http://localhost:3000"  # Should match your frontend URL
+    frontend_url = FRONTEND_URL
     return redirect(f"{frontend_url}/activities?strava_connected=true&activities={activity_count}")
 
 
