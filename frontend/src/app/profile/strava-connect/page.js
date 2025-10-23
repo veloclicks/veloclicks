@@ -74,6 +74,14 @@ const StravaPartnerContent = () => {
       // Build Strava OAuth URL
       const stravaAuthUrl = `https://www.strava.com/oauth/authorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`;
 
+      // Debug logging
+      console.log('=== STRAVA AUTH DEBUG ===');
+      console.log('API URL:', process.env.NEXT_PUBLIC_API_URL);
+      console.log('Redirect URI (encoded):', redirectUri);
+      console.log('Redirect URI (decoded):', decodeURIComponent(redirectUri));
+      console.log('Full Strava URL:', stravaAuthUrl);
+      console.log('========================');
+
       // Redirect to Strava OAuth
       window.location.href = stravaAuthUrl;
 
