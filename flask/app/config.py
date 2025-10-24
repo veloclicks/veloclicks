@@ -22,6 +22,8 @@ def resolve_ssm_parameter(value):
 # Resolve environment variables
 database_url = resolve_ssm_parameter(os.getenv('DATABASE_URL'))
 secret_key = resolve_ssm_parameter(os.getenv('SECRET_KEY'))
+strava_client_id = resolve_ssm_parameter(os.getenv('STRAVA_CLIENT_ID'))
+strava_client_secret = resolve_ssm_parameter(os.getenv('STRAVA_CLIENT_SECRET'))
 
 # Debug prints for Lambda environment
 print("=== CONFIG DEBUG ===")
@@ -29,6 +31,9 @@ try:
     print(f"Raw DATABASE_URL: {os.getenv('DATABASE_URL')}")
     print(f"Resolved DATABASE_URL: {database_url[:50]}..." if database_url else "None")
     print(f"SECRET_KEY exists: {bool(secret_key)}")
+    print(f"Raw STRAVA_CLIENT_ID: {os.getenv('STRAVA_CLIENT_ID')}")
+    print(f"Resolved STRAVA_CLIENT_ID: {strava_client_id}")
+    print(f"STRAVA_CLIENT_SECRET exists: {bool(strava_client_secret)}")
     print(f"FLASK_APP: {os.getenv('FLASK_APP')}")
     print(f"SKIP_CELERY: {os.getenv('SKIP_CELERY')}")
     print(f"TEST_PARAM: {os.getenv('TEST_PARAM')}")
@@ -44,6 +49,8 @@ class Config:
     SQLALCHEMY_DATABASE_URI = database_url or f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/{os.getenv('POSTGRES_DB')}"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SECRET_KEY = secret_key
+    STRAVA_CLIENT_ID = strava_client_id
+    STRAVA_CLIENT_SECRET = strava_client_secret
     TEST_KEY        = os.getenv('TEST_KEY')
 
     BROKER_URL      = os.getenv('BROKER_URL')

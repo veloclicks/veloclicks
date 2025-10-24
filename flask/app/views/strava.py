@@ -47,8 +47,6 @@ TWENTY_EIGHTEEN_START      = 1514764800
 
 DEFAULT_HISTORY_DAYS    = 2800
 SYNCH_WINDOW_DAYS       = 30
-CLIENT_ID               = os.getenv('STRAVA_CLIENT_ID')
-CLIENT_SECRET           = os.getenv('STRAVA_CLIENT_SECRET')
 FRONTEND_URL            = os.getenv('FRONTEND_URL')
 
 def get_user_id_from_token():
@@ -70,8 +68,27 @@ def test():
     print('/test api')
     return jsonify({'test': 'hello from /strava/test/ in strava.py!'})
 
+# Debug catch-all route to see what paths we're receiving
+@strava_bp.route('/', defaults={'path': ''})
+@strava_bp.route('/<path:path>')
+def catch_all(path):
+    print(f"=== CATCH-ALL DEBUG ===")
+    print(f"Received path: '{path}'")
+    print(f"Full request path: {request.path}")
+    print(f"Request URL: {request.url}")
+    print(f"Request args: {request.args}")
+    print(f"Request method: {request.method}")
+    print(f"Blueprint name: {request.blueprint}")
+    print("=====================")
+    return jsonify({
+        'message': f"Caught path: {path}",
+        'full_path': request.path,
+        'args': dict(request.args),
+        'method': request.method
+    })
+
 # -------------------------------------------------------------------------------------------
-#                         Strava Authentication and Permission 
+#                         Strava Authentication and Permission
 # -------------------------------------------------------------------------------------------
 # 1. react (activities.js) redirects the user to strava to provide authentication
 # 2. after slecting the permissions, strava redirects to this url with a short-lived token
@@ -80,38 +97,49 @@ def test():
 # 5. these are saved to the database
 #
 @strava_bp.route('/strava_auth/', methods=['POST', 'GET'])
+@strava_bp.route('/strava_auth', methods=['POST', 'GET'])  # without trailing slash
+@strava_bp.route('/auth/', methods=['POST', 'GET'])  # shorter path
+@strava_bp.route('/auth', methods=['POST', 'GET'])   # shorter path without slash
 def strava_auth():
-    logging.info('/strava_auth OAuth callback received')
+    print('>>>>>>>> [print] /strava_auth OAuth callback received')
+    logging.debug('>>>>>>>> [debug] /strava_auth OAuth callback received')
 
     # Handle OAuth errors from Strava
     error = request.args.get('error')
     if error:
-        logging.error(f'Strava OAuth error: {error}')
+        logging.error(f'>>>>>>>> Strava OAuth error: {error}')
         frontend_url = FRONTEND_URL
         return redirect(f"{frontend_url}/profile/strava-connect?error=access_denied")
 
     # Get authorization code and user state
+    logging.debug('>>>>>>>> [debug] /strava_auth extracting code and state')
     code = request.args.get('code')
     state = request.args.get('state')  # user_id
 
     if not code or not state:
-        logging.error('Missing code or state parameter')
+        logging.error('>>>>>>>> Missing code or state parameter')
         frontend_url = FRONTEND_URL
         return redirect(f"{frontend_url}/profile/strava-connect?error=missing_params")
 
     try:
+        # Get Strava credentials from config
+        client_id = current_app.config.get('STRAVA_CLIENT_ID')
+        client_secret = current_app.config.get('STRAVA_CLIENT_SECRET')
+        
+        logging.debug('>>>>>>>> [debug] /strava_auth client id', client_id)
+
         # Exchange code for tokens with correct redirect URI
         redirect_uri = f"{request.url_root.rstrip('/')}/strava/strava_auth/"
         response = requests.post('https://www.strava.com/oauth/token', data={
-            'client_id': CLIENT_ID,
-            'client_secret': CLIENT_SECRET,
+            'client_id': client_id,
+            'client_secret': client_secret,
             'code': code,
             'grant_type': 'authorization_code',
             'redirect_uri': redirect_uri
         })
 
         if not response.ok:
-            logging.error(f'Strava token exchange failed: {response.text}')
+            logging.error(f'>>>>>>>> Strava token exchange failed: {response.text}')
             frontend_url = FRONTEND_URL
             return redirect(f"{frontend_url}/profile/strava-connect?error=token_exchange")
 
@@ -123,7 +151,7 @@ def strava_auth():
         # Store tokens for the user
         user = User.query.get(int(state))
         if not user:
-            logging.error(f'User with id {state} not found')
+            logging.error(f'>>>>>>>> User with id {state} not found')
             frontend_url = FRONTEND_URL
             return redirect(f"{frontend_url}/profile/strava-connect?error=user_not_found")
 
@@ -133,11 +161,11 @@ def strava_auth():
         db.session.commit()
 
     except Exception as e:
-        logging.error(f'Strava OAuth error: {e}')
+        logging.error(f'>>>>>>>> Exception in strava_auth: {e}')
         frontend_url = FRONTEND_URL
         return redirect(f"{frontend_url}/profile/strava-connect?error=connection_failed")
 
-    logging.info(f'Strava tokens saved for user {state}, starting activity sync...')
+    print(f'>>>>>> Strava tokens saved for user {state}, starting activity sync...')
 
     # Sync the last 30 days activities
     now = datetime.now()

@@ -132,12 +132,21 @@ def create_app(*args, **kwargs) -> Flask:
     # register our blueprints - this should be after db init
     from app.views.main import main_bp
     app.register_blueprint(main_bp, url_prefix='/')
+    print(f"Registered main_bp with prefix: '/'")
 
     from app.views.api import api_bp
     app.register_blueprint(api_bp)
+    print(f"Registered api_bp with no prefix")
 
     from app.views.strava import strava_bp
     app.register_blueprint(strava_bp)
+    print(f"Registered strava_bp with prefix: '/strava'")
+
+    # Debug: Print all registered routes
+    print("=== ALL REGISTERED ROUTES ===")
+    for rule in app.url_map.iter_rules():
+        print(f"Route: {rule.rule} -> {rule.endpoint} (methods: {rule.methods})")
+    print("==============================")
 
     #
     # If Celery is enabled, create the tasks
