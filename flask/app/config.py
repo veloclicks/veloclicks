@@ -31,6 +31,8 @@ try:
     print(f"SECRET_KEY exists: {bool(secret_key)}")
     print(f"FLASK_APP: {os.getenv('FLASK_APP')}")
     print(f"SKIP_CELERY: {os.getenv('SKIP_CELERY')}")
+    print(f"TEST_PARAM: {os.getenv('TEST_PARAM')}")
+    print(f"FRONTEND_URL: {os.getenv('FRONTEND_URL')}")
     print("==================")
 except Exception as e:
     print(f"Exception getting environment config: {e}")
