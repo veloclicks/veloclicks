@@ -97,6 +97,8 @@ const RegistrationPage = () => {
           username: formData.email, // Using email as username
           email: formData.email,
           password: formData.password,
+          firstname: formData.firstName,
+          lastname: formData.lastName,
         }),
       });
 

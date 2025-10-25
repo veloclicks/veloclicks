@@ -144,9 +144,20 @@ def strava_auth():
             return redirect(f"{frontend_url}/profile/strava-connect?error=token_exchange")
 
         token_data = response.json()
+
+        # Debug logging for Strava token response
+        logging.debug(f">>>>>>>> Strava token response status: {response.status_code}")
+        logging.debug(f">>>>>>>> Strava token response headers: {dict(response.headers)}")
+        logging.debug(f">>>>>>>> Strava token response body: {response.text}")
+        logging.debug(f">>>>>>>> Parsed token data: {token_data}")
+
         access_token = token_data.get('access_token')
         refresh_token = token_data.get('refresh_token')
         expires_at = token_data.get('expires_at')
+
+        logging.debug(f">>>>>>>> Token details - access_token exists: {bool(access_token)}")
+        logging.debug(f">>>>>>>> Token details - refresh_token exists: {bool(refresh_token)}")
+        logging.debug(f">>>>>>>> Token details - expires_at: {expires_at} (type: {type(expires_at)})")
 
         # Store tokens for the user
         user = User.query.get(int(state))

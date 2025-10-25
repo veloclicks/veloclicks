@@ -16,9 +16,13 @@ api_bp = Blueprint('api', __name__, url_prefix='/api')
 # Registration endpoint
 @api_bp.route('/register', methods=['POST'])
 def register():
-    print('/register api')
+    print('/register api called')
     data = request.get_json()
-    print('/register with data \n', data)
+    print(f"/register for user: {data['username']}, {data['email']}")
+
+    # Debug log the specific fields we're looking for
+    print(f"firstname field: '{data.get('firstname')}' (type: {type(data.get('firstname'))})")
+    print(f"lastname field: '{data.get('lastname')}' (type: {type(data.get('lastname'))})")
     
     # Check if user already exists
     if User.query.filter_by(username=data['username']).first():
@@ -28,11 +32,23 @@ def register():
         return jsonify({'message': 'Email already in use'}), 400
     
     # Create new user
-    user = User(username=data['username'], email=data['email'])
+    user = User(
+        username=data['username'],
+        email=data['email'],
+        firstname=data['firstname'],
+        lastname=data['lastname']
+    )
     user.set_password(data['password'])
-    
+
+    # Debug log the user object before saving
+    print(f"Created user object - firstname: '{user.firstname}', lastname: '{user.lastname}'")
+
     db.session.add(user)
     db.session.commit()
+
+    # Debug log after saving
+    print(f"User saved to database with ID: {user.id}")
+    print(f"Saved user - firstname: '{user.firstname}', lastname: '{user.lastname}'")
     
     return jsonify({'message': 'User created successfully'}), 201
 
@@ -43,7 +59,7 @@ def register():
 def login():
     
     data = request.get_json()
-    print('/login with data \n', data)
+    print('/login for user \n', data['username'])
     
     # Find user by username
     user = User.query.filter_by(username=data['username']).first()
@@ -55,7 +71,7 @@ def login():
     token = jwt.encode({
         'user_id': user.id,
         'email': user.email,
-        'exp': datetime.datetime.utcnow() + datetime.timedelta(days=1)
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)
     }, current_app.config['SECRET_KEY'], algorithm='HS256')
     
     return jsonify({'token': token}), 200
@@ -79,8 +95,13 @@ def profile():
             return jsonify({'message': 'User not found'}), 404
 
         if request.method == 'GET':
-            # Return user profile data using database field names
-            return jsonify({
+            # Debug logging for profile data
+            import logging
+            logging.debug(f"Profile request for user_id: {user_id}")
+            logging.debug(f"User firstname: '{user.firstname}' (type: {type(user.firstname)})")
+            logging.debug(f"User lastname: '{user.lastname}' (type: {type(user.lastname)})")
+
+            profile_data = {
                 'username': user.username,
                 'email': user.email,
                 'firstname': user.firstname,
@@ -92,7 +113,10 @@ def profile():
                 'strava_access_token': user.strava_access_token,
                 'strava_refresh_token': user.strava_refresh_token,
                 'token_expiry_epoch': user.token_expiry_epoch
-            }), 200
+            }
+
+            print(f"/profile Returning profile data: {profile_data}")
+            return jsonify(profile_data), 200
 
         elif request.method == 'PUT':
             data = request.get_json()

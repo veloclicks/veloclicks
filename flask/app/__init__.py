@@ -78,6 +78,22 @@ def create_app(*args, **kwargs) -> Flask:
     from app.config import Config
     app.config.from_object(Config)
 
+    # Configure logging based on environment
+    import logging
+    log_level = getattr(logging, app.config['LOG_LEVEL'].upper(), logging.INFO)
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+
+    # Reduce noise from Zappa and other third-party loggers
+    logging.getLogger('zappa').setLevel(logging.WARNING)
+    logging.getLogger('werkzeug').setLevel(logging.WARNING)
+    logging.getLogger('botocore').setLevel(logging.WARNING)
+    logging.getLogger('boto3').setLevel(logging.WARNING)
+
+
     # Now we can access app.config for skip_celery
     skip_celery = kwargs.get('skipCelery', app.config.get('SKIP_CELERY', False))
 
@@ -132,21 +148,21 @@ def create_app(*args, **kwargs) -> Flask:
     # register our blueprints - this should be after db init
     from app.views.main import main_bp
     app.register_blueprint(main_bp, url_prefix='/')
-    print(f"Registered main_bp with prefix: '/'")
+    
 
     from app.views.api import api_bp
     app.register_blueprint(api_bp)
-    print(f"Registered api_bp with no prefix")
+    
 
     from app.views.strava import strava_bp
     app.register_blueprint(strava_bp)
-    print(f"Registered strava_bp with prefix: '/strava'")
+    
 
     # Debug: Print all registered routes
-    print("=== ALL REGISTERED ROUTES ===")
-    for rule in app.url_map.iter_rules():
-        print(f"Route: {rule.rule} -> {rule.endpoint} (methods: {rule.methods})")
-    print("==============================")
+    #print("=== ALL REGISTERED ROUTES ===")
+    #for rule in app.url_map.iter_rules():
+    #    print(f"Route: {rule.rule} -> {rule.endpoint} (methods: {rule.methods})")
+    #print("==============================")
 
     #
     # If Celery is enabled, create the tasks

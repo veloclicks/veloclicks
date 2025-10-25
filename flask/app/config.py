@@ -25,8 +25,9 @@ secret_key = resolve_ssm_parameter(os.getenv('SECRET_KEY'))
 strava_client_id = resolve_ssm_parameter(os.getenv('STRAVA_CLIENT_ID'))
 strava_client_secret = resolve_ssm_parameter(os.getenv('STRAVA_CLIENT_SECRET'))
 
-# Debug prints for Lambda environment
-print("=== CONFIG DEBUG ===")
+# Debug configuration for Lambda environment
+print("=== FLASK CONFIGURATION ===")
+print(f"LOG_LEVEL: {os.getenv('LOG_LEVEL', 'INFO')}")
 try:
     print(f"Raw DATABASE_URL: {os.getenv('DATABASE_URL')}")
     print(f"Resolved DATABASE_URL: {database_url[:50]}..." if database_url else "None")
@@ -51,6 +52,7 @@ class Config:
     SECRET_KEY = secret_key
     STRAVA_CLIENT_ID = strava_client_id
     STRAVA_CLIENT_SECRET = strava_client_secret
+    LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
     TEST_KEY        = os.getenv('TEST_KEY')
 
     BROKER_URL      = os.getenv('BROKER_URL')

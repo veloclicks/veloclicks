@@ -56,8 +56,9 @@ def get_access_token(user_id):
     # check their token
     token_expiry_epoch  = user.token_expiry_epoch
     now                 = date_utils.get_now_epoch()
-	
-    if now < token_expiry_epoch:
+
+    # If token_expiry_epoch is None, treat token as expired and refresh it
+    if token_expiry_epoch is not None and now < token_expiry_epoch:
         print(f"get_access_token() user: {user_id} current token is valid.")
         return user.strava_access_token
     
@@ -71,7 +72,17 @@ def get_access_token(user_id):
                 
         response = requests.post(url, params)
         jresponse = response.json()
-        
+
+        # Debug logging for token refresh response
+        import logging
+        logging.debug(f"Token refresh response status: {response.status_code}")
+        logging.debug(f"Token refresh response: {jresponse}")
+
+        # Check if refresh was successful
+        if 'access_token' not in jresponse:
+            logging.error(f"Token refresh failed for user {user_id}. Response: {jresponse}")
+            return None
+
         # uupdate the user
         user.strava_access_token = jresponse['access_token']
         user.strava_refresh_token = jresponse['refresh_token']
@@ -112,7 +123,7 @@ def get_key_activity_attributes(user_id, activity):
 # this gets activities that are in the db
 #
 def retrieve_db_activities(user_id, start_date=None, end_date=None):
-    logging.info(f"retrieve_db_activities() for user {user_id} from {start_date} to {end_date}.")
+    print(f"retrieve_db_activities() for user {user_id} from {start_date} to {end_date}.")
 
     selected_attributes=['id', 'name', 'start_date_local', 'start_date', 'type', 'distance', 'elapsed_time', 'moving_time', 'average_speed', 'max_speed', 'average_watts', 'max_watts', 'weighted_average_watts', 'average_heartrate', 'max_heartrate', 'suffer_score', 'average_cadence', 'total_elevation_gain', 'elev_low', 'elev_high']
 
@@ -128,7 +139,7 @@ def retrieve_db_activities(user_id, start_date=None, end_date=None):
     # Execute query with ordering
     activities = query.order_by(Activity.start_date.desc()).all()
 
-    logging.info(f"retrieve_db_activities() Found {len(activities)} activities in the database.")
+    print(f"retrieve_db_activities() Found {len(activities)} activities in the database for user {user_id}.")
 
     return activities
     
@@ -169,7 +180,7 @@ def store_activity_history_from_to(user_id, before_epoch, after_epoch):
                 activities  = response.json()
                 num_items   = len(activities)
                 
-                logging.info(f"store_activity_history_from_to(). Found {num_items} activities on page {page}")
+                print(f"store_activity_history_from_to(). Found {num_items} activities on page {page} for user {user_id}")
                 
                 # in case we have reached the end
                 if (num_items < items_per_page):
@@ -202,7 +213,7 @@ def store_activity_history_from_to(user_id, before_epoch, after_epoch):
         logging.info("store_activity_history_from_to() sleeping for 5s")
         time.sleep(5)
 
-    logging.info(f"store_activity_history_from_to() completed. Total activities processed: {len(minimal_activities)}, New activities added: {new_activities_count}")
+    print(f"store_activity_history_from_to() completed. Total activities processed: {len(minimal_activities)}, New activities added: {new_activities_count}")
     return {
         'activities': minimal_activities,
         'new_count': new_activities_count,
