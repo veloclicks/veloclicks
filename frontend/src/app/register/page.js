@@ -11,8 +11,7 @@ const RegistrationPage = () => {
     email: '',
     password: '',
     confirmPassword: '',
-    agreeTerms: false,
-    agreeNewsletter: false
+    agreeTerms: false
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -440,24 +439,6 @@ const RegistrationPage = () => {
                 </div>
               )}
 
-              <div className="flex items-start">
-                <input
-                  id="agreeNewsletter"
-                  name="agreeNewsletter"
-                  type="checkbox"
-                  checked={formData.agreeNewsletter}
-                  onChange={handleInputChange}
-                  className="h-4 w-4 rounded mt-0.5"
-                  style={{ 
-                    accentColor: colors.chart3,
-                    backgroundColor: colors.muted,
-                    borderColor: colors.border
-                  }}
-                />
-                <label htmlFor="agreeNewsletter" className="ml-2 block text-sm leading-5" style={{ color: colors.mutedForeground }}>
-                  Send me training tips and product updates
-                </label>
-              </div>
             </div>
 
             {/* General Error Message */}
