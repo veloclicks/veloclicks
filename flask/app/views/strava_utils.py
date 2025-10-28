@@ -5,7 +5,7 @@ import math
 import os
 from dotenv import load_dotenv
 
-from flask import Flask, jsonify, Blueprint, request
+from flask import Flask, jsonify, Blueprint, request, current_app
 import requests
 import logging
 from app.models.user import db, User
@@ -35,11 +35,11 @@ logging.basicConfig(
 # -------------------------------------------------------------------------------------------
 #                                               Constants
 # -------------------------------------------------------------------------------------------
-VC_USER_ID              = 1
+# VC_USER_ID              = 1  # DEPRECATED: Should use actual user_id from authentication
 EARLIEST_EPOCH          = 1577836800 # Wednesday, 1 January 2020 00:00:00
 DEFAULT_HISTORY_DAYS    = 60
-CLIENT_ID               = os.getenv('STRAVA_CLIENT_ID')
-CLIENT_SECRET           = os.getenv('STRAVA_CLIENT_SECRET')
+# Strava credentials will be accessed from Flask config (resolved from Parameter Store)
+# CLIENT_ID and CLIENT_SECRET accessed via current_app.config in functions
 
 
 
@@ -52,7 +52,7 @@ Gets latest access token for a user
 def get_access_token(user_id):    
     # get the user
     user = User.query.get(user_id)
-    
+    print(f"get_access_token() for user {user_id}")
     # check their token
     token_expiry_epoch  = user.token_expiry_epoch
     now                 = date_utils.get_now_epoch()
@@ -68,7 +68,15 @@ def get_access_token(user_id):
         
         # use the code to get a token via POST to strava
         url = "https://www.strava.com/api/v3/oauth/token"
-        params = {'client_id': CLIENT_ID, 'client_secret': CLIENT_SECRET, 'refresh_token': refresh_token, 'grant_type': 'refresh_token'}
+        client_id = current_app.config['STRAVA_CLIENT_ID']
+        client_secret = current_app.config['STRAVA_CLIENT_SECRET']
+
+        # Debug: Print what we're sending to Strava
+        print(f"get_access_token() CLIENT_ID: '{client_id}' (type: {type(client_id)})")
+        print(f"get_access_token() CLIENT_SECRET: '{client_secret}' (type: {type(client_secret)})")
+        print(f"get_access_token() refresh_token: '{refresh_token[:10]}...' (type: {type(refresh_token)})")
+
+        params = {'client_id': client_id, 'client_secret': client_secret, 'refresh_token': refresh_token, 'grant_type': 'refresh_token'}
                 
         response = requests.post(url, params)
         jresponse = response.json()
@@ -156,9 +164,13 @@ def retrieve_db_activities(user_id, start_date=None, end_date=None):
 # gets activities between two epochs and stores in database
 #    
 def store_activity_history_from_to(user_id, before_epoch, after_epoch):
-    logging.info(f"store_activity_history_from_to for user {user_id} from {before_epoch} to {after_epoch}")
+    print(f"store_activity_history_from_to for user {user_id} from {before_epoch} to {after_epoch}")
     
     access_token = get_access_token(user_id)
+    if not access_token:
+        print(f"Failed to get access token for user {user_id}")
+        return None
+
     page            = 1
     items_per_page  = 30
     theres_more     = True
@@ -188,7 +200,7 @@ def store_activity_history_from_to(user_id, before_epoch, after_epoch):
                 if (num_items > 0):
                     for activity in activities:
                         # strip put the unnecessary detail
-                        minimal_attributes = get_key_activity_attributes(VC_USER_ID, activity)
+                        minimal_attributes = get_key_activity_attributes(user_id, activity)
                         activity_id = activity['id']
                         
                         # store in placeholder

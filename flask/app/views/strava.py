@@ -35,7 +35,7 @@ logging.basicConfig(
 # -------------------------------------------------------------------------------------------
 #                                               Constants
 # -------------------------------------------------------------------------------------------
-VC_USER_ID              = 1
+# VC_USER_ID              = 1  # DEPRECATED: Should use actual user_id from authentication
 EARLIEST_EPOCH          = 1577836800 # Wednesday, 1 January 2020 00:00:00
 TWENTY_TWENTY_FOUR_START   = 1704067200
 TWENTY_TWENTY_THREE_START  = 1672531200
@@ -203,7 +203,7 @@ def strava_auth():
 # -------------------------------------------------------------------------------------------
 @strava_bp.route('/synch/')
 def strava_synch():
-    logging.info(f"strava_synch() - looking for new activities in last {SYNCH_WINDOW_DAYS} days.")
+    print(f"/synch strava_synch() - looking for new activities in last {SYNCH_WINDOW_DAYS} days.")
 
     user_id = get_user_id_from_token()
     if not user_id:
@@ -310,7 +310,9 @@ def get_all_activities():
     before_epoch    = TWENTY_TWENTY_FOUR_START
     #before_epoch    = int(datetime.now().timestamp())
     
-    user_id = VC_USER_ID
+    user_id = get_user_id_from_token()
+    if not user_id:
+        return jsonify({"error": "Authentication required"}), 401
     
     # get user info
     user = User.query.get(user_id)
