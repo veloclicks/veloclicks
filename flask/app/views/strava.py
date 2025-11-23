@@ -12,7 +12,7 @@ import jwt
 # Load environment variables
 load_dotenv()
 from app.model import db
-from app.models.user import User
+from app.models.user import User, MembershipType
 from app.models.strava import Activity
 from . import date_utils
 from . import strava_utils
@@ -185,7 +185,7 @@ def strava_auth():
 
     activity_count = 0
     try:
-        sync_result = strava_utils.store_activity_history_from_to(int(state), before_epoch, after_epoch)
+        sync_result = strava_utils.retrieve_strava_activities(int(state), before_epoch, after_epoch)
         activity_count = sync_result.get('new_count', 0) if sync_result else 0
         logging.info(f'Successfully synced {activity_count} new activities for user {state}')
     except Exception as e:
@@ -222,7 +222,7 @@ def strava_synch():
     
     # get the latest activities and save to db
     #minimal_activities = strava_utils.get_activities_from_to(user_id, before_epoch, after_epoch)
-    sync_result = strava_utils.store_activity_history_from_to(user_id, before_epoch, after_epoch)
+    sync_result = strava_utils.retrieve_strava_activities(user_id, before_epoch, after_epoch)
 
     if sync_result is not None:
         return jsonify({
@@ -289,7 +289,7 @@ def strava_activities():
         sixtydaysago_epoch  = int((now - timedelta(days=DEFAULT_HISTORY_DAYS)).timestamp())
         after_epoch         = sixtydaysago_epoch
         before_epoch        = int(now.timestamp())
-        activities          = strava_utils.store_activity_history_from_to(user_id, before_epoch, after_epoch)
+        activities          = strava_utils.retrieve_strava_activities(user_id, before_epoch, after_epoch)
         return jsonify({ "error": "Failed to fetch activities from db"})
 
 
@@ -320,7 +320,7 @@ def get_all_activities():
         return f"No user with id {user_id} found."
     
     # get the latest activities and save to db
-    minimal_activities = strava_utils.store_activity_history_from_to(user_id, before_epoch, after_epoch)
+    minimal_activities = strava_utils.retrieve_strava_activities(user_id, before_epoch, after_epoch)
 
     if minimal_activities is not None:
         return jsonify(minimal_activities)
@@ -394,3 +394,82 @@ def activity_elevation_profile(id):
         return jsonify({'error': 'Failed to retrieve elevation profile data or no stream data available'}), 404
 
     return jsonify(profile_data)
+
+
+# -------------------------------------------------------------------------------------------
+#                   Monthly sync - Retrieve activities by month and year (Premium only)
+# -------------------------------------------------------------------------------------------
+# http://127.0.0.1:5002/strava/monthly_synch?year=2024&month=5
+# http://127.0.0.1:5002/strava/monthly_synch?year=2024
+@strava_bp.route("/monthly_synch", methods=["GET"])
+def monthly_synch():
+    """
+    Retrieve Strava activities by month and year.
+    Requires PREMIUM_TIER membership.
+
+    Query Parameters:
+        year (required): Year to sync activities for
+        month (optional): Specific month (1-12). If not provided, syncs all months in the year.
+    """
+    logging.info("/strava/monthly_synch")
+
+    # Get authenticated user
+    user_id = get_user_id_from_token()
+    if not user_id:
+        return jsonify({"error": "Authentication required"}), 401
+
+    # Get user and check membership type
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    # Check if user has premium membership
+    if user.membership_type != MembershipType.PREMIUM_TIER:
+        return jsonify({
+            "error": "Premium membership required",
+            "message": "This feature is only available to premium members. Please upgrade your membership to access historical activity sync."
+        }), 403
+
+    # Get query parameters
+    year = request.args.get('year')
+    month = request.args.get('month')
+
+    # Validate year parameter (required)
+    if not year:
+        return jsonify({"error": "Year parameter is required"}), 400
+
+    try:
+        year = int(year)
+        if year < 2000 or year > datetime.now().year:
+            return jsonify({"error": f"Invalid year. Must be between 2000 and {datetime.now().year}"}), 400
+    except ValueError:
+        return jsonify({"error": "Year must be a valid integer"}), 400
+
+    # Validate month parameter (optional)
+    month_int = None
+    if month:
+        try:
+            month_int = int(month)
+            if month_int < 1 or month_int > 12:
+                return jsonify({"error": "Month must be between 1 and 12"}), 400
+        except ValueError:
+            return jsonify({"error": "Month must be a valid integer"}), 400
+
+    # Call the strava_utils function to retrieve activities
+    logging.info(f"Syncing activities for user {user_id}, year {year}, month {month_int}")
+    result = strava_utils.retrieve_strava_activities_by_month(user_id, year, month_int)
+
+    if result:
+        return jsonify({
+            "success": True,
+            "total_activities": result['total_activities'],
+            "total_new": result['total_new'],
+            "months_processed": result['months_processed'],
+            "month_results": result['month_results'],
+            "message": f"Successfully synced {result['total_new']} new activities out of {result['total_activities']} total."
+        })
+    else:
+        return jsonify({
+            "error": "Failed to retrieve activities",
+            "success": False
+        }), 500

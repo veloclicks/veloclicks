@@ -1,5 +1,12 @@
 from app.model import db
 from werkzeug.security import generate_password_hash, check_password_hash
+import enum
+
+
+class MembershipType(enum.Enum):
+    FREE_TIER = 'FREE_TIER'
+    PREMIUM_TIER = 'PREMIUM_TIER'
+
 
 class User(db.Model):
     __tablename__ = 'vc_user'
@@ -24,8 +31,10 @@ class User(db.Model):
     
     last_synch_epoch = db.Column(db.Integer, nullable=True) # epoch of last activity synched
     earliest_synch_epoch = db.Column(db.Integer, nullable=True) # epoch of earliest activity synchd
-    
-    
+
+    membership_type = db.Column(db.Enum(MembershipType), nullable=False, default=MembershipType.FREE_TIER)
+
+
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
 

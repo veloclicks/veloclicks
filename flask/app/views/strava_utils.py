@@ -163,8 +163,19 @@ def retrieve_db_activities(user_id, start_date=None, end_date=None):
 #
 # gets activities between two epochs and stores in database
 #    
-def store_activity_history_from_to(user_id, before_epoch, after_epoch):
-    print(f"store_activity_history_from_to for user {user_id} from {before_epoch} to {after_epoch}")
+def retrieve_strava_activities(user_id, before_epoch, after_epoch):
+    """
+    Gets activities from strave between two periods and stores them in the database.
+
+    Args:
+        user_id (_type_): The local id of the user who's strava account is to be accessed to retrieve the activities 
+        before_epoch (_type_): The unix epoch indicating the start of the time period within which to retrieve activities
+        after_epoch (_type_): The unix epoch indicating the end of the time period within which to retrieve activities
+
+    Returns:
+        Dictionary: A Dictionary with 3 keys: 'activities' contains a list of activities found ; 'new-count': the number of activities added to the database; total_processed: the total number of activities found within the before_epoch and end_epoch
+    """
+    print(f"retrieve_strava_activities for user {user_id} from {before_epoch} to {after_epoch}")
     
     access_token = get_access_token(user_id)
     if not access_token:
@@ -192,7 +203,7 @@ def store_activity_history_from_to(user_id, before_epoch, after_epoch):
                 activities  = response.json()
                 num_items   = len(activities)
                 
-                print(f"store_activity_history_from_to(). Found {num_items} activities on page {page} for user {user_id}")
+                print(f"retrieve_strava_activities(). Found {num_items} activities on page {page} for user {user_id}")
                 
                 # in case we have reached the end
                 if (num_items < items_per_page):
@@ -222,14 +233,104 @@ def store_activity_history_from_to(user_id, before_epoch, after_epoch):
         except Exception as e:
                 logging.error(f"Error Failed to fetch activities details {e}")
                 return None
-        logging.info("store_activity_history_from_to() sleeping for 5s")
-        time.sleep(5)
+        logging.info("store_activity_history_from_to() sleeping for 2s")
+        time.sleep(2)
 
-    print(f"store_activity_history_from_to() completed. Total activities processed: {len(minimal_activities)}, New activities added: {new_activities_count}")
+    print(f"retrieve_strava_activities() completed. Total activities processed: {len(minimal_activities)}, New activities added: {new_activities_count}")
     return {
         'activities': minimal_activities,
         'new_count': new_activities_count,
         'total_processed': len(minimal_activities)
+    }
+
+
+#
+# Retrieve Strava activities by month and year
+#
+def retrieve_strava_activities_by_month(user_id, year, month=None):
+    """
+    Retrieves Strava activities for a user by month and year.
+    If no month is provided, loops through all months in the year.
+
+    Args:
+        user_id (int): The local id of the user whose Strava account is to be accessed
+        year (int): The year for which to retrieve activities (e.g., 2024)
+        month (int, optional): The month (1-12) for which to retrieve activities.
+                               If None, retrieves activities for all months in the year.
+
+    Returns:
+        Dictionary: A dictionary containing:
+            - 'total_activities': total number of activities retrieved
+            - 'total_new': total number of new activities added to database
+            - 'months_processed': list of months that were processed
+            - 'month_results': dictionary with per-month breakdown
+    """
+    from calendar import monthrange
+
+    logging.info(f"retrieve_strava_activities_by_month() for user {user_id}, year {year}, month {month}")
+
+    # Determine which months to process
+    if month is not None:
+        # Single month provided
+        months_to_process = [month]
+    else:
+        # Process all 12 months
+        months_to_process = list(range(1, 13))
+
+    # Track overall results
+    total_activities = 0
+    total_new = 0
+    month_results = {}
+
+    # Process each month
+    for current_month in months_to_process:
+        logging.info(f"Processing month {current_month}/{year}")
+
+        # Calculate epoch for start of month (first day at 00:00:00)
+        start_date = datetime(year, current_month, 1)
+        after_epoch = int(start_date.timestamp())
+
+        # Calculate epoch for end of month (last day at 23:59:59)
+        last_day = monthrange(year, current_month)[1]
+        end_date = datetime(year, current_month, last_day, 23, 59, 59)
+        before_epoch = int(end_date.timestamp())
+
+        logging.info(f"Month {current_month}: after_epoch={after_epoch}, before_epoch={before_epoch}")
+
+        # Call retrieve_strava_activities for this month
+        result = retrieve_strava_activities(user_id, before_epoch, after_epoch)
+
+        if result:
+            # Track this month's results
+            month_results[current_month] = {
+                'activities_count': result['total_processed'],
+                'new_count': result['new_count'],
+                'start_epoch': after_epoch,
+                'end_epoch': before_epoch
+            }
+
+            total_activities += result['total_processed']
+            total_new += result['new_count']
+
+            logging.info(f"Month {current_month}/{year}: Found {result['total_processed']} activities, {result['new_count']} new")
+        else:
+            logging.error(f"Failed to retrieve activities for month {current_month}/{year}")
+            month_results[current_month] = {
+                'error': 'Failed to retrieve activities'
+            }
+
+        # Sleep for 10 seconds before processing next month (only if processing multiple months)
+        if month is None and current_month != months_to_process[-1]:
+            logging.info("Sleeping for 5 seconds before next month...")
+            time.sleep(5)
+
+    logging.info(f"retrieve_strava_activities_by_month() completed. Total activities: {total_activities}, New activities: {total_new}")
+
+    return {
+        'total_activities': total_activities,
+        'total_new': total_new,
+        'months_processed': months_to_process,
+        'month_results': month_results
     }
 
 
