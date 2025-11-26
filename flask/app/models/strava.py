@@ -2,8 +2,8 @@ from sqlalchemy import Column, String, Integer, BigInteger, ForeignKey, Float, T
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import ForeignKeyConstraint
 
-from app.model import db
-from app.models.user import User
+from .db import db
+from .user import User
 
 class Activity(db.Model): 
     __tablename__ = 'vc_strava_activity'

@@ -115,16 +115,15 @@ def create_app(*args, **kwargs) -> Flask:
     # --- DATABASE INTIIALISATION - DON"T DO THIS IF THE FLASK APP IS BEING CREATED BY CELERY ----
     #
     if not is_celery:
-        from app.model import db
+        from app.models import db, User, Activity
         db.init_app(app)
         migrate = Migrate()
         migrate.init_app(app, db)
 
         # import models - this will create the migrations
         with app.app_context():
-            from app.models.user import User
-            from app.models.car import Car
-            from app.models.strava import Activity
+            # Models already imported above
+            pass
 
     #
     # Create celery instance if requested (don't request from zappa AWS as it won;t work in lambda
@@ -154,7 +153,7 @@ def create_app(*args, **kwargs) -> Flask:
     app.register_blueprint(api_bp)
     
 
-    from app.views.strava import strava_bp
+    from app.strava import strava_bp
     app.register_blueprint(strava_bp)
     
 
@@ -189,4 +188,5 @@ def create_app(*args, **kwargs) -> Flask:
 
 
 # Create app instance for Zappa (Docker will continue using create_app() directly)
-application = create_app()
+# Pass isCelery=True to avoid DB initialization at import time (Celery will call create_app separately)
+application = create_app(isCelery=True)

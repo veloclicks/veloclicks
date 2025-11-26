@@ -1,8 +1,7 @@
 from flask import Blueprint, request, jsonify
-from app.models.user import User, db
-from app.models.car import Car
+from app.models import db, User, Activity
+# from app.models.car import Car  # Not currently used
 from datetime import datetime
-from app.model import db
 
 main_bp = Blueprint('main', __name__)
 
@@ -22,8 +21,6 @@ def health():
 
 
 from dateutil import parser
-from app.models.user import db
-from app.models.strava import Activity
 
 @main_bp.route('/db_tools', methods=['GET'])
 def get_db_info():

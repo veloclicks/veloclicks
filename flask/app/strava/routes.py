@@ -11,11 +11,10 @@ import jwt
 
 # Load environment variables
 load_dotenv()
-from app.model import db
-from app.models.user import User, MembershipType
-from app.models.strava import Activity
-from . import date_utils
-from . import strava_utils
+from app.models import db, User, Activity
+from app.models.user import MembershipType
+from app.common import date_utils
+from . import utils as strava_utils
 
 #bp = Blueprint("strava", __name__)
 strava_bp = Blueprint('strava', __name__, url_prefix='/strava')

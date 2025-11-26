@@ -8,9 +8,8 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, Blueprint, request, current_app
 import requests
 import logging
-from app.models.user import db, User
-from app.models.strava import Activity
-from . import date_utils
+from app.models import db, User, Activity
+from app.common import date_utils
 
 # Load environment variables
 load_dotenv()

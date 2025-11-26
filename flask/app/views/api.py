@@ -4,8 +4,7 @@ from flask import current_app
 from flask import request, jsonify
 import jwt
 
-from app.model import db
-from app.models.user import User
+from app.models import db, User
 
 import datetime
 
