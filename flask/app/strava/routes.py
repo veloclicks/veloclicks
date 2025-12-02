@@ -186,7 +186,14 @@ def strava_auth():
     try:
         sync_result = strava_utils.retrieve_strava_activities(int(state), before_epoch, after_epoch)
         activity_count = sync_result.get('new_count', 0) if sync_result else 0
-        logging.info(f'Successfully synced {activity_count} new activities for user {state}')
+
+        # Update last_synch_epoch after successful initial sync
+        if sync_result:
+            user.last_synch_epoch = before_epoch
+            db.session.commit()
+            logging.info(f'Successfully synced {activity_count} new activities for user {state}, updated last_synch_epoch')
+        else:
+            logging.info(f'Successfully synced {activity_count} new activities for user {state}')
     except Exception as e:
         logging.error(f'Failed to sync activities for user {state}: {e}')
         # Continue anyway - user is connected even if sync failed
@@ -202,28 +209,40 @@ def strava_auth():
 # -------------------------------------------------------------------------------------------
 @strava_bp.route('/synch/')
 def strava_synch():
-    print(f"/synch strava_synch() - looking for new activities in last {SYNCH_WINDOW_DAYS} days.")
+    print(f"/synch strava_synch() - syncing activities")
 
     user_id = get_user_id_from_token()
     if not user_id:
         return jsonify({"error": "Authentication required", "success": False}), 401
-    
-    now               = datetime.now()
-    synch_from_epoch  = int((now - timedelta(days=SYNCH_WINDOW_DAYS)).timestamp())
-    
+
+    now = datetime.now()
+    before_epoch = int(now.timestamp())
+
     # get user info
     user = User.query.get(user_id)
     if not user:
         return f"No user with id {user_id} found."
-    
-    after_epoch     = synch_from_epoch
-    before_epoch    = int(now.timestamp())
-    
+
+    # Calculate default sync window
+    default_synch_from = int((now - timedelta(days=SYNCH_WINDOW_DAYS)).timestamp())
+
+    # Use the most recent of: last_synch_epoch OR default window
+    if user.last_synch_epoch:
+        after_epoch = max(user.last_synch_epoch, default_synch_from)
+        print(f"Using last_synch_epoch: {user.last_synch_epoch} (max with default: {after_epoch})")
+    else:
+        after_epoch = default_synch_from
+        print(f"No last_synch_epoch found, using default {SYNCH_WINDOW_DAYS} day window")
+
     # get the latest activities and save to db
-    #minimal_activities = strava_utils.get_activities_from_to(user_id, before_epoch, after_epoch)
     sync_result = strava_utils.retrieve_strava_activities(user_id, before_epoch, after_epoch)
 
     if sync_result is not None:
+        # Update last_synch_epoch to current time
+        user.last_synch_epoch = before_epoch
+        db.session.commit()
+        print(f"Updated last_synch_epoch to {before_epoch}")
+
         return jsonify({
             "success": True,
             "new_activities": sync_result['new_count'],
