@@ -66,5 +66,8 @@ logs/
 # Development notes
 implementation_notes.txt
 
+# Claude Code configuration
+.claude_code
+
 # Zappa settings with secrets
 zappa/zappa_settings.json

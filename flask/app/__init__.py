@@ -188,5 +188,4 @@ def create_app(*args, **kwargs) -> Flask:
 
 
 # Create app instance for Zappa (Docker will continue using create_app() directly)
-# Pass isCelery=True to avoid DB initialization at import time (Celery will call create_app separately)
-application = create_app(isCelery=True)
+application = create_app()
