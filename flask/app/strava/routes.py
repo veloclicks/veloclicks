@@ -415,6 +415,106 @@ def activity_elevation_profile(id):
 
 
 # -------------------------------------------------------------------------------------------
+#                           Update RPE (Rate of Perceived Exertion) for activity
+# -------------------------------------------------------------------------------------------
+# http://127.0.0.1:5002/strava/activity/123456/rpe
+@strava_bp.route("/activity/<int:id>/rpe", methods=["PUT"])
+def update_activity_rpe(id):
+    """
+    Update the Rate of Perceived Exertion (RPE) for an activity.
+    RPE should be an integer between 1-10.
+    """
+    logging.info(f"/strava/activity/{id}/rpe")
+
+    user_id = _get_user_id_from_token()
+    if not user_id:
+        return jsonify({"error": "Authentication required"}), 401
+
+    # Get activity by ID and user_id for security
+    activity = Activity.query.filter_by(id=id, user_id=user_id).first()
+
+    if not activity:
+        return jsonify({'error': 'Activity not found'}), 404
+
+    # Get RPE value from request
+    data = request.get_json()
+    rpe_value = data.get('rpe')
+
+    # Validate RPE value
+    if rpe_value is not None:
+        try:
+            rpe_value = int(rpe_value)
+            if rpe_value < 1 or rpe_value > 10:
+                return jsonify({'error': 'RPE must be between 1 and 10'}), 400
+        except (ValueError, TypeError):
+            return jsonify({'error': 'RPE must be a valid integer'}), 400
+
+    # Update activity RPE
+    activity.rpe = rpe_value
+    db.session.commit()
+
+    logging.info(f"Updated RPE for activity {id} to {rpe_value}")
+    return jsonify({
+        'message': 'RPE updated successfully',
+        'activity_id': id,
+        'rpe': rpe_value
+    })
+
+
+# -------------------------------------------------------------------------------------------
+#                           Calculate power metrics for activity
+# -------------------------------------------------------------------------------------------
+# http://127.0.0.1:5002/strava/activity/123456/calculate-power-metrics
+@strava_bp.route("/activity/<int:id>/calculate-power-metrics", methods=["POST"])
+def calculate_activity_power_metrics_endpoint(id):
+    """
+    Calculate power curve and time-in-zones for an activity.
+    This endpoint triggers the calculation and storage of:
+    - Power curve (max average power for various durations)
+    - Time in zones (seconds spent in each power zone)
+    """
+    logging.info(f"/strava/activity/{id}/calculate-power-metrics")
+
+    user_id = _get_user_id_from_token()
+    if not user_id:
+        return jsonify({"error": "Authentication required"}), 401
+
+    # Verify activity exists and belongs to user
+    activity = Activity.query.filter_by(id=id, user_id=user_id).first()
+    if not activity:
+        return jsonify({'error': 'Activity not found'}), 404
+
+    # Import the calculation functions
+    from app.strava.activity_utils import calculate_activity_power_metrics
+
+    # Calculate power metrics
+    try:
+        result = calculate_activity_power_metrics(user_id, id)
+
+        if result['power_curve'] is None and result['time_in_zones'] is None:
+            return jsonify({
+                'error': 'Failed to calculate power metrics',
+                'message': 'No power data available for this activity or calculation failed'
+            }), 404
+
+        return jsonify({
+            'message': 'Power metrics calculated successfully',
+            'activity_id': id,
+            'power_curve_calculated': result['power_curve'] is not None,
+            'time_in_zones_calculated': result['time_in_zones'] is not None,
+            'power_curve_points': len(result['power_curve']) if result['power_curve'] else 0,
+            'time_in_zones': result['time_in_zones']
+        })
+
+    except Exception as e:
+        logging.error(f"Error calculating power metrics for activity {id}: {str(e)}")
+        return jsonify({
+            'error': 'Failed to calculate power metrics',
+            'message': str(e)
+        }), 500
+
+
+# -------------------------------------------------------------------------------------------
 #                   Monthly sync - Retrieve activities by month and year (Premium only)
 # -------------------------------------------------------------------------------------------
 # http://127.0.0.1:5002/strava/monthly_synch?year=2024&month=5

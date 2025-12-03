@@ -50,6 +50,12 @@ class Activity(db.Model):
     elev_low                = Column(Float(12, 2), nullable=True)
     elev_high               = Column(Float(12, 2), nullable=True)
 
+    # Power Analysis
+    ftp = Column(Integer, nullable=True)                    # User's FTP at time of activity
+    rpe = Column(Integer, nullable=True)                    # Rate of Perceived Exertion (1-10)
+    power_curve_data = Column(Text, nullable=True)          # JSON: {duration_seconds: max_watts}
+    time_in_zones = Column(Text, nullable=True)             # JSON: {zone_name: seconds}
+
     def __repr__(self):
         return f"{self.email}"
     
@@ -78,6 +84,10 @@ class Activity(db.Model):
             "total_elevation_gain": round(float(self.total_elevation_gain), 2) if self.total_elevation_gain is not None else None,
             "elev_low": round(float(self.elev_low), 2) if self.elev_low is not None else None,
             "elev_high": round(float(self.elev_high), 2) if self.elev_high is not None else None,
+            "ftp": self.ftp,
+            "rpe": self.rpe,
+            "power_curve_data": self.power_curve_data,
+            "time_in_zones": self.time_in_zones,
         }
 
         

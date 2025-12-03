@@ -173,6 +173,10 @@ def retrieve_strava_activities(user_id, before_epoch, after_epoch):
         print(f"Failed to get access token for user {user_id}")
         return None
 
+    # Get user's current FTP to capture as snapshot
+    user = User.query.get(user_id)
+    user_ftp = user.ftp if user else None
+
     page            = 1
     items_per_page  = 30
     theres_more     = True
@@ -211,6 +215,8 @@ def retrieve_strava_activities(user_id, before_epoch, after_epoch):
                             
                         # check if activity already in DB and add if not add them
                         if not db.session.query(Activity).filter_by(id=activity_id).first():
+                            # Capture FTP snapshot at time of activity sync
+                            minimal_attributes['ftp'] = user_ftp
                             activity = Activity(**minimal_attributes)
                             db.session.add(activity)
                             db.session.commit()

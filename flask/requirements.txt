@@ -12,4 +12,5 @@ redis==4.5.4
 zappa==0.60.2
 Flask-Limiter==3.5.0
 boto3>=1.26.0
+numpy==1.24.3
 

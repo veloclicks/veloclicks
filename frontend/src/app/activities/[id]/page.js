@@ -35,6 +35,7 @@ const ActivityDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [hoveredIndex, setHoveredIndex] = useState(null); // For map-elevation sync
+  const [generatingPowerMetrics, setGeneratingPowerMetrics] = useState(false);
 
   // Fetch activity data from Flask API or use demo data
   useEffect(() => {
