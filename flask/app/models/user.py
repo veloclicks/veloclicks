@@ -24,6 +24,7 @@ class User(db.Model):
     date_of_birth = db.Column(db.Date, nullable=True)
     ftp         = db.Column(db.Integer, nullable=True)     # Functional Threshold Power
     max_heart_rate = db.Column(db.Integer, nullable=True)
+    resting_heart_rate = db.Column(db.Integer, nullable=True)
 
     strava_access_token = db.Column(db.String(128), nullable=True)
     strava_refresh_token = db.Column(db.String(128), nullable=True)

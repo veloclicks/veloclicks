@@ -5,6 +5,8 @@ from flask import request, jsonify
 import jwt
 
 from app.models import db, User
+from app.training.zone_utils import populate_zones, get_user_zones
+from app.models.training_zone import ZoneType
 
 import datetime
 
@@ -109,9 +111,11 @@ def profile():
                 'date_of_birth': user.date_of_birth.isoformat() if user.date_of_birth else None,
                 'ftp': user.ftp,
                 'max_heart_rate': user.max_heart_rate,
+                'resting_heart_rate': user.resting_heart_rate,
                 'strava_access_token': user.strava_access_token,
                 'strava_refresh_token': user.strava_refresh_token,
-                'token_expiry_epoch': user.token_expiry_epoch
+                'token_expiry_epoch': user.token_expiry_epoch,
+                'zones': get_user_zones(user_id)
             }
 
             print(f"/profile Returning profile data: {profile_data}")
@@ -120,8 +124,27 @@ def profile():
         elif request.method == 'PUT':
             data = request.get_json()
 
-            # List of fields that can be updated
-            updatable_fields = ['firstname', 'lastname', 'sex', 'date_of_birth', 'ftp', 'max_heart_rate']
+            # Handle FTP changes and regenerate power zones
+            if 'ftp' in data and data['ftp']:
+                ftp_value = int(data['ftp']) if data['ftp'] else None
+                if ftp_value and ftp_value != user.ftp:
+                    user.ftp = ftp_value
+                    populate_zones(user.id, ZoneType.POWER, user.ftp)
+
+            # Handle max heart rate changes and regenerate heart rate zones
+            if 'max_heart_rate' in data and data['max_heart_rate']:
+                max_hr_value = int(data['max_heart_rate']) if data['max_heart_rate'] else None
+                if max_hr_value and max_hr_value != user.max_heart_rate:
+                    user.max_heart_rate = max_hr_value
+                    populate_zones(user.id, ZoneType.HEART_RATE, user.max_heart_rate)
+
+            # Handle resting heart rate (no zone regeneration needed)
+            if 'resting_heart_rate' in data:
+                resting_hr_value = int(data['resting_heart_rate']) if data['resting_heart_rate'] else None
+                user.resting_heart_rate = resting_hr_value
+
+            # List of other fields that can be updated
+            updatable_fields = ['firstname', 'lastname', 'sex', 'date_of_birth']
 
             # Update fields that are present in the request
             for field in updatable_fields:
