@@ -48,7 +48,10 @@ DEFAULT_HISTORY_DAYS    = 2800
 SYNCH_WINDOW_DAYS       = 30
 FRONTEND_URL            = os.getenv('FRONTEND_URL')
 
-def get_user_id_from_token():
+#
+# Gets the user id from the JWT token
+#
+def _get_user_id_from_token():
     """Extract user ID from JWT token in Authorization header"""
     auth_header = request.headers.get('Authorization')
 
@@ -62,12 +65,19 @@ def get_user_id_from_token():
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, IndexError):
         return None
 
+
+#
+# Test method
+#
 @strava_bp.route('/test/', methods=['POST', 'GET'])
 def test():
     print('/test api')
     return jsonify({'test': 'hello from /strava/test/ in strava.py!'})
 
+
+#
 # Debug catch-all route to see what paths we're receiving
+#
 @strava_bp.route('/', defaults={'path': ''})
 @strava_bp.route('/<path:path>')
 def catch_all(path):
@@ -144,19 +154,9 @@ def strava_auth():
 
         token_data = response.json()
 
-        # Debug logging for Strava token response
-        logging.debug(f">>>>>>>> Strava token response status: {response.status_code}")
-        logging.debug(f">>>>>>>> Strava token response headers: {dict(response.headers)}")
-        logging.debug(f">>>>>>>> Strava token response body: {response.text}")
-        logging.debug(f">>>>>>>> Parsed token data: {token_data}")
-
         access_token = token_data.get('access_token')
         refresh_token = token_data.get('refresh_token')
         expires_at = token_data.get('expires_at')
-
-        logging.debug(f">>>>>>>> Token details - access_token exists: {bool(access_token)}")
-        logging.debug(f">>>>>>>> Token details - refresh_token exists: {bool(refresh_token)}")
-        logging.debug(f">>>>>>>> Token details - expires_at: {expires_at} (type: {type(expires_at)})")
 
         # Store tokens for the user
         user = User.query.get(int(state))
@@ -211,7 +211,7 @@ def strava_auth():
 def strava_synch():
     print(f"/synch strava_synch() - syncing activities")
 
-    user_id = get_user_id_from_token()
+    user_id = _get_user_id_from_token()
     if not user_id:
         return jsonify({"error": "Authentication required", "success": False}), 401
 
@@ -260,7 +260,7 @@ def strava_synch():
 def strava_activities():
     logging.info('strava_activities()')
 
-    user_id = get_user_id_from_token()
+    user_id = _get_user_id_from_token()
     if not user_id:
         return jsonify({"error": "Authentication required"}), 401
 
@@ -295,7 +295,7 @@ def strava_activities():
 
     # get activities from db with date filtering
     logging.info(f"strava_activities() - looking for activities for user {user_id} from {start_date} to {end_date}")
-    activities = strava_utils.retrieve_db_activities(user_id, start_date, end_date)
+    activities = strava_utils._retrieve_stored_activities(user_id, start_date, end_date)
 
     if activities is not None:
         #return jsonify(activities)
@@ -328,7 +328,7 @@ def get_all_activities():
     before_epoch    = TWENTY_TWENTY_FOUR_START
     #before_epoch    = int(datetime.now().timestamp())
     
-    user_id = get_user_id_from_token()
+    user_id = _get_user_id_from_token()
     if not user_id:
         return jsonify({"error": "Authentication required"}), 401
     
@@ -354,7 +354,7 @@ def activity(id):
 
     logging.info(f"/strava/activity/ received id: {id}")
 
-    user_id = get_user_id_from_token()
+    user_id = _get_user_id_from_token()
     if not user_id:
         return jsonify({"error": "Authentication required"}), 401
 
@@ -376,7 +376,7 @@ def activity_streams(id):
 
     logging.info(f"/strava/activity/{id}/streams")
 
-    user_id = get_user_id_from_token()
+    user_id = _get_user_id_from_token()
     if not user_id:
         return jsonify({"error": "Authentication required"}), 401
 
@@ -401,7 +401,7 @@ def activity_elevation_profile(id):
 
     logging.info(f"/strava/activity/{id}/elevation-profile")
 
-    user_id = get_user_id_from_token()
+    user_id = _get_user_id_from_token()
     if not user_id:
         return jsonify({"error": "Authentication required"}), 401
 
@@ -432,7 +432,7 @@ def monthly_synch():
     logging.info("/strava/monthly_synch")
 
     # Get authenticated user
-    user_id = get_user_id_from_token()
+    user_id = _get_user_id_from_token()
     if not user_id:
         return jsonify({"error": "Authentication required"}), 401
 

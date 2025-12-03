@@ -108,7 +108,7 @@ def get_access_token(user_id):
 #
 # Extracts key activity attributes from an Activity
 #
-def get_key_activity_attributes(user_id, activity):
+def _get_key_activity_attributes(user_id, activity):
     keys=['id', 'name', 'start_date_local', 'start_date', 'type', 'distance', 'elapsed_time', 'moving_time', 'average_speed', 'max_speed', 'average_watts', 'max_watts', 'weighted_average_watts', 'average_heartrate', 'max_heartrate', 'suffer_score', 'average_cadence', 'total_elevation_gain', 'elev_low', 'elev_high']
     
     minimal_dict = {key: activity[key] for key in keys if key in activity}
@@ -129,8 +129,8 @@ def get_key_activity_attributes(user_id, activity):
 #
 # this gets activities that are in the db
 #
-def retrieve_db_activities(user_id, start_date=None, end_date=None):
-    print(f"retrieve_db_activities() for user {user_id} from {start_date} to {end_date}.")
+def _retrieve_stored_activities(user_id, start_date=None, end_date=None):
+    print(f"_retrieve_stored_activities() for user {user_id} from {start_date} to {end_date}.")
 
     selected_attributes=['id', 'name', 'start_date_local', 'start_date', 'type', 'distance', 'elapsed_time', 'moving_time', 'average_speed', 'max_speed', 'average_watts', 'max_watts', 'weighted_average_watts', 'average_heartrate', 'max_heartrate', 'suffer_score', 'average_cadence', 'total_elevation_gain', 'elev_low', 'elev_high']
 
@@ -146,18 +146,10 @@ def retrieve_db_activities(user_id, start_date=None, end_date=None):
     # Execute query with ordering
     activities = query.order_by(Activity.start_date.desc()).all()
 
-    print(f"retrieve_db_activities() Found {len(activities)} activities in the database for user {user_id}.")
+    print(f"_retrieve_stored_activities() Found {len(activities)} activities in the database for user {user_id}.")
 
-    return activities
+    return activities  
     
-    
-    '''
-    activity_dicts = [
-        {attr: getattr(activity, attr) for attr in selected_attributes}
-        for activity in activities
-    ]
-    return activity_dicts
-    '''
         
 #
 # gets activities between two epochs and stores in database
@@ -193,6 +185,7 @@ def retrieve_strava_activities(user_id, before_epoch, after_epoch):
     minimal_activities = []
     new_activities_count = 0
 
+    # loop through to get all the activities
     while(theres_more):
         params  = { 'after':after_epoch, 'before': before_epoch, 'page':page, 'per_page': items_per_page}
         try:
@@ -210,7 +203,7 @@ def retrieve_strava_activities(user_id, before_epoch, after_epoch):
                 if (num_items > 0):
                     for activity in activities:
                         # strip put the unnecessary detail
-                        minimal_attributes = get_key_activity_attributes(user_id, activity)
+                        minimal_attributes = _get_key_activity_attributes(user_id, activity)
                         activity_id = activity['id']
                         
                         # store in placeholder
@@ -244,7 +237,7 @@ def retrieve_strava_activities(user_id, before_epoch, after_epoch):
 
 
 #
-# Retrieve Strava activities by month and year
+# Retrieve Strava activities by month and year - used to iterate through historic data
 #
 def retrieve_strava_activities_by_month(user_id, year, month=None):
     """
