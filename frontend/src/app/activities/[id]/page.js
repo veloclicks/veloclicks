@@ -138,6 +138,101 @@ const ActivityDetailPage = () => {
     return [latSum / routePoints.length, lngSum / routePoints.length];
   }, [routePoints]);
 
+  // Helper function to format duration for display
+  const formatDuration = (seconds) => {
+    if (seconds < 60) {
+      return `${seconds}s`;
+    } else if (seconds < 3600) {
+      const minutes = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return secs > 0 ? `${minutes}m ${secs}s` : `${minutes}m`;
+    } else {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+    }
+  };
+
+  // Parse power curve and time in zones data (must be before early returns)
+  const powerCurveData = useMemo(() => {
+    if (!activity?.power_curve_data) return null;
+    try {
+      const parsed = JSON.parse(activity.power_curve_data);
+      return Object.entries(parsed).map(([duration, watts]) => ({
+        duration: parseInt(duration),
+        durationLabel: formatDuration(parseInt(duration)),
+        watts: parseFloat(watts)
+      })).sort((a, b) => a.duration - b.duration);
+    } catch (e) {
+      console.error('Error parsing power curve data:', e);
+      return null;
+    }
+  }, [activity]);
+
+  const timeInZonesData = useMemo(() => {
+    if (!activity?.time_in_zones) return null;
+    try {
+      const parsed = JSON.parse(activity.time_in_zones);
+      return Object.entries(parsed).map(([zone, seconds]) => ({
+        zone: zone.toUpperCase(),
+        minutes: Math.round(seconds / 60),
+        seconds: parseInt(seconds)
+      })).filter(z => z.seconds > 0); // Only show zones with time
+    } catch (e) {
+      console.error('Error parsing time in zones data:', e);
+      return null;
+    }
+  }, [activity]);
+
+  const hasPowerMetrics = powerCurveData !== null || timeInZonesData !== null;
+
+  // Calculate Y-axis ticks for power curve (evenly spaced in 25W increments)
+  const powerCurveYTicks = useMemo(() => {
+    if (!powerCurveData || powerCurveData.length === 0) return [];
+
+    const minWatts = Math.min(...powerCurveData.map(d => d.watts));
+    const maxWatts = Math.max(...powerCurveData.map(d => d.watts));
+
+    // Round down to nearest 25 for min, round up to nearest 25 for max
+    const minTick = Math.floor(minWatts / 25) * 25;
+    const maxTick = Math.ceil(maxWatts / 25) * 25;
+
+    // Generate ticks in 25W increments
+    const ticks = [];
+    for (let i = minTick; i <= maxTick; i += 25) {
+      ticks.push(i);
+    }
+
+    return ticks;
+  }, [powerCurveData]);
+
+  // Calculate X-axis ticks for power curve (key time intervals)
+  const powerCurveXTicks = useMemo(() => {
+    if (!powerCurveData || powerCurveData.length === 0) return [];
+
+    const maxDuration = Math.max(...powerCurveData.map(d => d.duration));
+    const ticks = [];
+
+    // Add key intervals based on max duration
+    if (maxDuration >= 30) ticks.push(30); // 30s
+    if (maxDuration >= 60) ticks.push(60); // 1m
+    if (maxDuration >= 120) ticks.push(120); // 2m
+    if (maxDuration >= 300) ticks.push(300); // 5m
+    if (maxDuration >= 600) ticks.push(600); // 10m
+    if (maxDuration >= 1200) ticks.push(1200); // 20m
+    if (maxDuration >= 1800) ticks.push(1800); // 30m
+    if (maxDuration >= 3600) ticks.push(3600); // 1h
+
+    // Add hour marks if duration is longer than 1 hour
+    if (maxDuration > 3600) {
+      for (let h = 2; h <= Math.floor(maxDuration / 3600); h++) {
+        ticks.push(h * 3600);
+      }
+    }
+
+    return ticks;
+  }, [powerCurveData]);
+
 
   // Dark theme colors matching your palette
   const colors = {
@@ -238,6 +333,43 @@ const ActivityDetailPage = () => {
   };
 
   const svgPath = createSVGPath(routePoints);
+
+  // Generate power metrics
+  const handleGeneratePowerMetrics = async () => {
+    try {
+      setGeneratingPowerMetrics(true);
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/strava/activity/${activityId}/calculate-power-metrics`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate power metrics');
+      }
+
+      // Refresh activity data to show new metrics
+      const activityResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/strava/activity/${activityId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (activityResponse.ok) {
+        const updatedActivity = await activityResponse.json();
+        setActivity(updatedActivity);
+      }
+    } catch (err) {
+      console.error('Error generating power metrics:', err);
+      alert('Failed to generate power metrics. Please try again.');
+    } finally {
+      setGeneratingPowerMetrics(false);
+    }
+  };
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: colors.background }}>
@@ -383,6 +515,10 @@ const ActivityDetailPage = () => {
                 <div className="flex justify-between">
                   <span style={{ color: colors.mutedForeground }}>Normalised Power</span>
                   <span style={{ color: colors.accent }}>{activity.weighted_average_watts ? activity.weighted_average_watts + 'W' : '-'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span style={{ color: colors.mutedForeground }}>FTP at Activity Time</span>
+                  <span style={{ color: colors.primary }}>{activity.ftp ? activity.ftp + ' W' : 'Unset'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span style={{ color: colors.mutedForeground }}>Avg Cadence</span>
@@ -687,6 +823,154 @@ const ActivityDetailPage = () => {
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Power Insights Section */}
+            {activity.average_watts && (
+              <div className="mt-6 rounded-xl shadow-sm" style={{
+                backgroundColor: colors.card,
+                border: `1px solid ${colors.border}`
+              }}>
+                <div className="px-6 py-4 border-b" style={{ borderColor: colors.border }}>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold" style={{ color: colors.foreground }}>
+                      Power Insights
+                    </h3>
+                    <Zap className="h-5 w-5" style={{ color: colors.accent }} />
+                  </div>
+                </div>
+
+                <div className="p-6">
+                  {!hasPowerMetrics ? (
+                    <div className="text-center py-8">
+                      <p className="text-sm mb-4" style={{ color: colors.mutedForeground }}>
+                        Generate detailed power analysis including power curve and time in zones
+                      </p>
+                      <button
+                        onClick={handleGeneratePowerMetrics}
+                        disabled={generatingPowerMetrics}
+                        className="px-6 py-3 rounded-lg font-medium transition-colors hover:opacity-90 disabled:opacity-50"
+                        style={{ backgroundColor: colors.accent, color: 'white' }}
+                      >
+                        {generatingPowerMetrics ? (
+                          <span className="flex items-center space-x-2">
+                            <RefreshCw className="h-4 w-4 animate-spin" />
+                            <span>Generating...</span>
+                          </span>
+                        ) : (
+                          'Generate Power Insights'
+                        )}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {/* Power Curve */}
+                      {powerCurveData && (
+                        <div>
+                          <h4 className="text-md font-semibold mb-4" style={{ color: colors.foreground }}>
+                            Power Curve
+                          </h4>
+                          <ResponsiveContainer width="100%" height={300}>
+                            <AreaChart data={powerCurveData}>
+                              <CartesianGrid strokeDasharray="3 3" stroke={colors.border} />
+                              <XAxis
+                                dataKey="duration"
+                                type="number"
+                                domain={['dataMin', 'dataMax']}
+                                ticks={powerCurveXTicks}
+                                tickFormatter={(value) => formatDuration(value)}
+                                stroke={colors.mutedForeground}
+                                label={{ value: 'Duration', position: 'insideBottom', offset: -5, style: { fill: colors.mutedForeground } }}
+                              />
+                              <YAxis
+                                domain={[powerCurveYTicks[0], powerCurveYTicks[powerCurveYTicks.length - 1]]}
+                                ticks={powerCurveYTicks}
+                                stroke={colors.mutedForeground}
+                                label={{ value: 'Power (W)', angle: -90, position: 'insideLeft', style: { fill: colors.mutedForeground } }}
+                              />
+                              <Tooltip
+                                contentStyle={{
+                                  backgroundColor: colors.card,
+                                  border: `1px solid ${colors.border}`,
+                                  borderRadius: '8px',
+                                  color: colors.foreground
+                                }}
+                                content={({ active, payload }) => {
+                                  if (active && payload && payload.length) {
+                                    const data = payload[0].payload;
+                                    return (
+                                      <div style={{
+                                        backgroundColor: colors.card,
+                                        border: `1px solid ${colors.border}`,
+                                        borderRadius: '8px',
+                                        padding: '8px 12px',
+                                        color: colors.foreground
+                                      }}>
+                                        <p style={{ margin: '0 0 4px 0', fontWeight: 'bold' }}>
+                                          Duration: {data.durationLabel}
+                                        </p>
+                                        <p style={{ margin: '2px 0', color: colors.accent }}>
+                                          Max Avg Power: {data.watts.toFixed(0)}W
+                                        </p>
+                                      </div>
+                                    );
+                                  }
+                                  return null;
+                                }}
+                              />
+                              <Area
+                                type="monotone"
+                                dataKey="watts"
+                                stroke={colors.accent}
+                                fill={colors.accent}
+                                fillOpacity={0.3}
+                                strokeWidth={2}
+                              />
+                            </AreaChart>
+                          </ResponsiveContainer>
+                          <p className="text-xs mt-2 text-center" style={{ color: colors.mutedForeground }}>
+                            Maximum average power sustained for different durations
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Time in Zones */}
+                      {timeInZonesData && (
+                        <div className="mt-6">
+                          <h4 className="text-md font-semibold mb-4" style={{ color: colors.foreground }}>
+                            Time in Power Zones
+                          </h4>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            {timeInZonesData.map((zone, index) => (
+                              <div
+                                key={zone.zone}
+                                className="p-4 rounded-lg text-center"
+                                style={{
+                                  backgroundColor: colors.muted,
+                                  border: `1px solid ${colors.border}`
+                                }}
+                              >
+                                <div className="text-sm font-medium mb-1" style={{ color: colors.mutedForeground }}>
+                                  {zone.zone}
+                                </div>
+                                <div className="text-2xl font-bold" style={{ color: colors.accent }}>
+                                  {zone.minutes}
+                                </div>
+                                <div className="text-xs" style={{ color: colors.mutedForeground }}>
+                                  minutes
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <p className="text-xs mt-4 text-center" style={{ color: colors.mutedForeground }}>
+                            Based on FTP at activity time: {activity.ftp ? `${activity.ftp}W` : 'Not set'}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

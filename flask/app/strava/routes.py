@@ -462,6 +462,45 @@ def update_activity_rpe(id):
 
 
 # -------------------------------------------------------------------------------------------
+#                           Bulk update RPE for multiple activities
+# -------------------------------------------------------------------------------------------
+# http://127.0.0.1:5002/strava/activities/rpe
+@strava_bp.route("/activities/rpe", methods=["PUT"])
+def bulk_update_activities_rpe():
+    """
+    Update RPE for one or more activities in a single transaction.
+    Request body: {"updates": [{"activity_id": 123, "rpe": 7}, ...]}
+    """
+    logging.info(f"/strava/activities/rpe (bulk update)")
+
+    user_id = _get_user_id_from_token()
+    if not user_id:
+        return jsonify({"error": "Authentication required"}), 401
+
+    # Get request data
+    data = request.get_json()
+    if not data or 'updates' not in data:
+        return jsonify({'error': 'Missing "updates" field in request body'}), 400
+
+    updates = data['updates']
+
+    # Call utility function
+    result = strava_utils.set_rpe(user_id, updates)
+
+    # Return appropriate response
+    if result['success']:
+        return jsonify({
+            'message': result['message'],
+            'count': result['count']
+        }), 200
+    else:
+        return jsonify({
+            'error': result['error'],
+            'message': result['message']
+        }), 400
+
+
+# -------------------------------------------------------------------------------------------
 #                           Calculate power metrics for activity
 # -------------------------------------------------------------------------------------------
 # http://127.0.0.1:5002/strava/activity/123456/calculate-power-metrics

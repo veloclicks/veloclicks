@@ -15,7 +15,10 @@ logger = logging.getLogger(__name__)
 def _generate_power_curve_durations(activity_duration_seconds: int) -> List[int]:
     """
     Generate list of durations (in seconds) for power curve calculation.
-    Uses logarithmic spacing for 0-2hr, 30min intervals for 2-6hr, 1hr intervals beyond 6hr.
+    Uses high granularity optimized for cycling power analysis:
+    - 1s to 2hr: every second (7,200 points)
+    - 2hr to 12hr: every 5 seconds (~7,200 points)
+    - Max supported duration: 12 hours
 
     Args:
         activity_duration_seconds: Total duration of the activity in seconds
@@ -25,34 +28,20 @@ def _generate_power_curve_durations(activity_duration_seconds: int) -> List[int]
     """
     durations = []
 
-    # High granularity 0-2 hours (25 logarithmically-spaced points)
-    two_hours = 2 * 3600
-    if activity_duration_seconds >= 60:  # Only if activity is at least 1 minute
-        max_duration_phase1 = min(activity_duration_seconds, two_hours)
-        phase1_durations = np.logspace(
-            np.log10(1),  # Start at 1 second
-            np.log10(max_duration_phase1),
-            num=25,
-            dtype=int
-        )
-        durations.extend(phase1_durations.tolist())
+    # Cap at 12 hours maximum
+    twelve_hours = 12 * 3600  # 43,200 seconds
+    max_duration = min(activity_duration_seconds, twelve_hours)
 
-    # Medium granularity 2-6 hours (every 30 minutes)
-    six_hours = 6 * 3600
-    if activity_duration_seconds > two_hours:
-        max_duration_phase2 = min(activity_duration_seconds, six_hours)
-        phase2_start = two_hours + 1800  # 2hr + 30min
-        phase2_durations = range(phase2_start, int(max_duration_phase2) + 1, 1800)
-        durations.extend(phase2_durations)
+    # Phase 1: 1 second to 2 hours (every second)
+    two_hours = 2 * 3600  # 7,200 seconds
+    if max_duration >= 1:
+        phase1_end = min(max_duration, two_hours)
+        durations.extend(range(1, phase1_end + 1))
 
-    # Low granularity beyond 6 hours (every 1 hour)
-    if activity_duration_seconds > six_hours:
-        phase3_start = six_hours + 3600  # 6hr + 1hr
-        phase3_durations = range(phase3_start, int(activity_duration_seconds) + 1, 3600)
-        durations.extend(phase3_durations)
-
-    # Remove duplicates and sort
-    durations = sorted(list(set(durations)))
+    # Phase 2: 2 hours to 12 hours (every 5 seconds)
+    if max_duration > two_hours:
+        phase2_start = two_hours + 5
+        durations.extend(range(phase2_start, max_duration + 1, 5))
 
     return durations
 
@@ -70,6 +59,7 @@ def calculate_power_curve(user_id: int, activity_id: int) -> Optional[Dict[int, 
 
     Returns:
         Dictionary mapping duration (seconds) to max average power (watts),
+        empty dict {} if no power data exists,
         or None if calculation failed
     """
     try:
@@ -82,15 +72,21 @@ def calculate_power_curve(user_id: int, activity_id: int) -> Optional[Dict[int, 
         # Get power stream data
         streams = get_activity_streams(user_id, activity_id, ['watts', 'time'])
         if not streams or 'watts' not in streams or 'time' not in streams:
+            # No power data available - mark as checked with empty JSON
+            activity.power_curve_data = '{}'
+            db.session.commit()
             logger.warning(f"No power data available for activity {activity_id}")
-            return None
+            return {}  # Empty dict means "checked, no data exists"
 
         watts_data = streams['watts']['data']
         time_data = streams['time']['data']
 
         if not watts_data or len(watts_data) == 0:
+            # Empty power data - mark as checked with empty JSON
+            activity.power_curve_data = '{}'
+            db.session.commit()
             logger.warning(f"Empty power data for activity {activity_id}")
-            return None
+            return {}
 
         # Convert to numpy arrays for efficient computation
         watts_array = np.array(watts_data, dtype=float)
@@ -142,6 +138,7 @@ def calculate_time_in_zones(user_id: int, activity_id: int) -> Optional[Dict[str
 
     Returns:
         Dictionary mapping zone name to time in seconds,
+        empty dict {} if no power data exists,
         or None if calculation failed
     """
     try:
@@ -154,13 +151,19 @@ def calculate_time_in_zones(user_id: int, activity_id: int) -> Optional[Dict[str
         # Get power stream data
         streams = get_activity_streams(user_id, activity_id, ['watts', 'time'])
         if not streams or 'watts' not in streams:
+            # No power data available - mark as checked with empty JSON
+            activity.time_in_zones = '{}'
+            db.session.commit()
             logger.warning(f"No power data available for activity {activity_id}")
-            return None
+            return {}
 
         watts_data = streams['watts']['data']
         if not watts_data or len(watts_data) == 0:
+            # Empty power data - mark as checked with empty JSON
+            activity.time_in_zones = '{}'
+            db.session.commit()
             logger.warning(f"Empty power data for activity {activity_id}")
-            return None
+            return {}
 
         # Get user's power zones
         zones = get_user_zones(user_id, ZoneType.POWER)

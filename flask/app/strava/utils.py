@@ -477,3 +477,135 @@ def get_elevation_profile_data(user_id, activity_id):
         'sampled_points': len(sampled_data),
         'sample_rate_used': sample_rate if len(profile_data) > min_points else 1
     }
+
+
+#
+# Set RPE (Rate of Perceived Exertion) for one or more activities
+#
+def set_rpe(user_id, updates):
+    """
+    Set RPE for one or more activities.
+    All-or-nothing transaction: validates all updates before applying any.
+
+    Args:
+        user_id: Authenticated user ID
+        updates: List of {"activity_id": int, "rpe": int|None} dicts
+
+    Returns:
+        {"success": True, "count": int, "message": str} on success
+        {"success": False, "error": str, "message": str} on failure
+    """
+    logging.info(f"set_rpe() for user {user_id} with {len(updates)} updates")
+
+    try:
+        # Ensure updates is a list
+        if not isinstance(updates, list):
+            return {
+                "success": False,
+                "error": "Invalid format",
+                "message": "Updates must be a list"
+            }
+
+        if len(updates) == 0:
+            return {
+                "success": False,
+                "error": "No updates provided",
+                "message": "Updates list cannot be empty"
+            }
+
+        # Step 1: Validate all updates first
+        activity_ids = []
+        validated_updates = []
+
+        for i, update in enumerate(updates):
+            # Check structure
+            if not isinstance(update, dict):
+                return {
+                    "success": False,
+                    "error": "Invalid format",
+                    "message": f"Update {i} is not a dictionary"
+                }
+
+            if 'activity_id' not in update or 'rpe' not in update:
+                return {
+                    "success": False,
+                    "error": "Missing fields",
+                    "message": f"Update {i} missing 'activity_id' or 'rpe'"
+                }
+
+            activity_id = update['activity_id']
+            rpe_value = update['rpe']
+
+            # Validate activity_id
+            try:
+                activity_id = int(activity_id)
+            except (ValueError, TypeError):
+                return {
+                    "success": False,
+                    "error": "Invalid activity_id",
+                    "message": f"Update {i}: activity_id must be an integer"
+                }
+
+            # Validate RPE value
+            if rpe_value is not None:
+                try:
+                    rpe_value = int(rpe_value)
+                    if rpe_value < 1 or rpe_value > 10:
+                        return {
+                            "success": False,
+                            "error": "Invalid RPE value",
+                            "message": f"Update {i}: RPE must be between 1 and 10 (got {rpe_value})"
+                        }
+                except (ValueError, TypeError):
+                    return {
+                        "success": False,
+                        "error": "Invalid RPE value",
+                        "message": f"Update {i}: RPE must be a valid integer or null"
+                    }
+
+            activity_ids.append(activity_id)
+            validated_updates.append({"activity_id": activity_id, "rpe": rpe_value})
+
+        # Step 2: Fetch all activities and verify they belong to user
+        activities = Activity.query.filter(
+            Activity.id.in_(activity_ids),
+            Activity.user_id == user_id
+        ).all()
+
+        # Check all activities were found
+        if len(activities) != len(activity_ids):
+            found_ids = {a.id for a in activities}
+            missing_ids = set(activity_ids) - found_ids
+            return {
+                "success": False,
+                "error": "Activities not found",
+                "message": f"Activities not found or not owned by user: {sorted(missing_ids)}"
+            }
+
+        # Create a map of activity_id -> activity object for quick lookup
+        activity_map = {a.id: a for a in activities}
+
+        # Step 3: Apply all updates
+        for update in validated_updates:
+            activity = activity_map[update['activity_id']]
+            activity.rpe = update['rpe']
+
+        # Step 4: Commit transaction
+        db.session.commit()
+
+        # Step 5: Return success
+        logging.info(f"set_rpe() successfully updated {len(validated_updates)} activities")
+        return {
+            "success": True,
+            "count": len(validated_updates),
+            "message": f"Updated {len(validated_updates)} {'activity' if len(validated_updates) == 1 else 'activities'}"
+        }
+
+    except Exception as e:
+        logging.error(f"set_rpe() Exception: {e}")
+        db.session.rollback()
+        return {
+            "success": False,
+            "error": "Database error",
+            "message": str(e)
+        }

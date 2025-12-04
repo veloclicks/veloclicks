@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Activity, RefreshCw, User, LogOut } from 'lucide-react';
+import { Activity, RefreshCw, User, LogOut, Brain } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const Navigation = () => {
@@ -108,17 +108,29 @@ const Navigation = () => {
                 </button>
               )}
               
-              <button 
+              <button
                 className="px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:opacity-80"
-                style={isActive('/visualizations') ? { 
-                  backgroundColor: colors.primary, 
+                style={isActive('/visualizations') ? {
+                  backgroundColor: colors.primary,
                   color: 'white'
                 } : { color: colors.mutedForeground }}
                 onClick={() => router.push('/visualizations')}
               >
                 Visualizations
               </button>
-              
+
+              <button
+                className="px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:opacity-80 flex items-center space-x-2"
+                style={isActive('/ai-insights') ? {
+                  backgroundColor: colors.primary,
+                  color: 'white'
+                } : { color: colors.mutedForeground }}
+                onClick={() => router.push('/ai-insights')}
+              >
+                <Brain className="h-4 w-4" />
+                <span>AI Insights</span>
+              </button>
+
             </nav>
           </div>
           
