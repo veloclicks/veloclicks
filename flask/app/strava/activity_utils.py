@@ -12,6 +12,126 @@ from app.strava.utils import get_activity_streams
 logger = logging.getLogger(__name__)
 
 
+
+
+# --------------------------------------------------------------------------------------
+# 
+#                                     TSS
+#
+# --------------------------------------------------------------------------------------
+
+def calculate_tss(user_id: int, activity_id: int) -> Optional[float]:
+    """
+    Calculate Training Stress Score (TSS) for an activity based on heart rate data.
+
+    TSS is calculated using the TRIMP (Training Impulse) method:
+    - For each second: TRIMP += duration * HR_fraction * exp_factor
+    - HR_fraction = (HR - resting_HR) / (max_HR - resting_HR)
+    - exp_factor = exp(1.92 * HR_fraction) for males, exp(1.67 * HR_fraction) for females
+    - TSS is then normalized to a 0-100+ scale where 100 = 1 hour at threshold
+
+    Args:
+        user_id: ID of the user (for authorization checks)
+        activity_id: ID of the activity to analyze
+
+    Returns:
+        TSS value as float, 0.0 if no heart rate data exists, or None if calculation failed
+    """
+    try:
+        # Fetch activity from database
+        activity = Activity.query.filter_by(id=activity_id, user_id=user_id).first()
+        if not activity:
+            logger.error(f"Activity {activity_id} not found for user {user_id}")
+            return None
+
+        # Get heart rate stream data
+        streams = get_activity_streams(user_id, activity_id, ['heartrate', 'time'])
+        if not streams or 'heartrate' not in streams or 'time' not in streams:
+            # No heart rate data available - mark as checked with TSS = 0
+            activity.tss = 0.0
+            db.session.commit()
+            logger.warning(f"No heart rate data available for activity {activity_id}")
+            return 0.0
+
+        hr_data = streams['heartrate']['data']
+        time_data = streams['time']['data']
+
+        # Validate data types
+        if not isinstance(hr_data, list):
+            logger.error(f"Heart rate data is not a list for activity {activity_id}: type={type(hr_data)}, value={hr_data}")
+            activity.tss = 0.0
+            db.session.commit()
+            return 0.0
+
+        if not hr_data or len(hr_data) == 0:
+            # Empty heart rate data - mark as checked with TSS = 0
+            activity.tss = 0.0
+            db.session.commit()
+            logger.warning(f"Empty heart rate data for activity {activity_id}")
+            return 0.0
+
+        # Get user profile data for HR calculations
+        from app.models.user import User
+        user = User.query.filter_by(id=user_id).first()
+        if not user:
+            logger.error(f"User {user_id} not found")
+            return None
+
+        # Check if user has required HR data
+        if not user.max_heart_rate or not user.resting_heart_rate:
+            logger.warning(f"User {user_id} missing max_heart_rate or resting_heart_rate")
+            activity.tss = 0.0
+            db.session.commit()
+            return 0.0
+
+        max_hr = float(user.max_heart_rate)
+        resting_hr = float(user.resting_heart_rate)
+
+        # Determine exponential factor based on sex (default to male if not set)
+        exp_multiplier = 1.92 if user.sex in ['Male', 'M', None] else 1.67
+
+        # Calculate TRIMP for each second
+        trimp_total = 0.0
+        for hr in hr_data:
+            if hr is None or hr <= 0:
+                continue
+
+            # Calculate heart rate fraction (reserve)
+            hr_fraction = (hr - resting_hr) / (max_hr - resting_hr)
+
+            # Clamp to reasonable bounds (0 to 1.2 to allow for slight overages)
+            hr_fraction = max(0.0, min(1.2, hr_fraction))
+
+            # Calculate exponential weighting factor
+            exp_factor = np.exp(exp_multiplier * hr_fraction)
+
+            # TRIMP for this second (duration = 1 second)
+            trimp_total += 1.0 * hr_fraction * exp_factor
+
+        # Normalize TRIMP to TSS scale
+        # A typical hour-long threshold workout (HR at ~85% of max) should yield TSS ~100
+        # This normalization factor may need tuning based on real-world data
+        # For now, we'll use a conservative scaling
+        tss = trimp_total / 60.0  # Rough normalization
+
+        # Save to database
+        activity.tss = round(tss, 1)
+        db.session.commit()
+
+        logger.info(f"Calculated TSS for activity {activity_id}: {tss:.1f}")
+        return round(tss, 1)
+
+    except Exception as e:
+        logger.error(f"Error calculating TSS for activity {activity_id}: {str(e)}")
+        db.session.rollback()
+        return None
+
+# --------------------------------------------------------------------------------------
+# 
+#                                     POWER
+#
+# --------------------------------------------------------------------------------------
+
 def _generate_power_curve_durations(activity_duration_seconds: int) -> List[int]:
     """
     Generate list of durations (in seconds) for power curve calculation.
@@ -44,6 +164,7 @@ def _generate_power_curve_durations(activity_duration_seconds: int) -> List[int]
         durations.extend(range(phase2_start, max_duration + 1, 5))
 
     return durations
+
 
 
 def calculate_power_curve(user_id: int, activity_id: int) -> Optional[Dict[int, float]]:
@@ -127,8 +248,10 @@ def calculate_power_curve(user_id: int, activity_id: int) -> Optional[Dict[int, 
         db.session.rollback()
         return None
 
-
-def calculate_time_in_zones(user_id: int, activity_id: int) -> Optional[Dict[str, int]]:
+#
+# Time in Power Zones
+#
+def calculate_power_distribution(user_id: int, activity_id: int) -> Optional[Dict[str, int]]:
     """
     Calculate time spent in each power zone for an activity and save to database.
 
@@ -202,7 +325,10 @@ def calculate_time_in_zones(user_id: int, activity_id: int) -> Optional[Dict[str
         return None
 
 
-def calculate_activity_power_metrics(user_id: int, activity_id: int) -> Dict[str, Optional[Dict]]:
+#
+# Entry point
+#
+def calculate_power_metrics(user_id: int, activity_id: int) -> Dict[str, Optional[Dict]]:
     """
     Calculate all power metrics for an activity (power curve and time in zones).
     This is a convenience orchestrator function that calls both calculation functions.
@@ -217,7 +343,7 @@ def calculate_activity_power_metrics(user_id: int, activity_id: int) -> Dict[str
     logger.info(f"Calculating power metrics for activity {activity_id}")
 
     power_curve = calculate_power_curve(user_id, activity_id)
-    time_in_zones = calculate_time_in_zones(user_id, activity_id)
+    time_in_zones = calculate_power_distribution(user_id, activity_id)
 
     return {
         'power_curve': power_curve,

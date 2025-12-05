@@ -55,6 +55,7 @@ class Activity(db.Model):
     rpe = Column(Integer, nullable=True)                    # Rate of Perceived Exertion (1-10)
     power_curve_data = Column(Text, nullable=True)          # JSON: {duration_seconds: max_watts}
     time_in_zones = Column(Text, nullable=True)             # JSON: {zone_name: seconds}
+    tss = Column(Float(12, 1), nullable=True)               # Training Stress Score (heart rate based)
 
     def __repr__(self):
         return f"{self.email}"
@@ -88,6 +89,7 @@ class Activity(db.Model):
             "rpe": self.rpe,
             "power_curve_data": self.power_curve_data,
             "time_in_zones": self.time_in_zones,
+            "tss": round(float(self.tss), 1) if self.tss is not None else None,
         }
 
         

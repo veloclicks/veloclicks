@@ -524,11 +524,11 @@ def calculate_activity_power_metrics_endpoint(id):
         return jsonify({'error': 'Activity not found'}), 404
 
     # Import the calculation functions
-    from app.strava.activity_utils import calculate_activity_power_metrics
+    from app.strava.activity_utils import calculate_power_metrics
 
     # Calculate power metrics
     try:
-        result = calculate_activity_power_metrics(user_id, id)
+        result = calculate_power_metrics(user_id, id)
 
         if result['power_curve'] is None and result['time_in_zones'] is None:
             return jsonify({
@@ -549,6 +549,62 @@ def calculate_activity_power_metrics_endpoint(id):
         logging.error(f"Error calculating power metrics for activity {id}: {str(e)}")
         return jsonify({
             'error': 'Failed to calculate power metrics',
+            'message': str(e)
+        }), 500
+
+
+# -------------------------------------------------------------------------------------------
+#                           Calculate TSS (Training Stress Score) for activity
+# -------------------------------------------------------------------------------------------
+# http://127.0.0.1:5002/strava/activity/123456/calculate-tss
+@strava_bp.route("/activity/<int:id>/calculate-tss", methods=["POST"])
+def calculate_activity_tss_endpoint(id):
+    """
+    Calculate Training Stress Score (TSS) for an activity based on heart rate data.
+    TSS is calculated using the TRIMP method and normalized to a 0-100+ scale.
+    """
+    logging.info(f"/strava/activity/{id}/calculate-tss")
+
+    user_id = _get_user_id_from_token()
+    if not user_id:
+        return jsonify({"error": "Authentication required"}), 401
+
+    # Verify activity exists and belongs to user
+    activity = Activity.query.filter_by(id=id, user_id=user_id).first()
+    if not activity:
+        return jsonify({'error': 'Activity not found'}), 404
+
+    # Import the calculation function
+    from app.strava.activity_utils import calculate_tss
+
+    # Calculate TSS
+    try:
+        tss = calculate_tss(user_id, id)
+
+        if tss is None:
+            return jsonify({
+                'error': 'Failed to calculate TSS',
+                'message': 'Calculation failed or user missing required heart rate data'
+            }), 404
+
+        if tss == 0.0:
+            return jsonify({
+                'message': 'TSS calculated (no heart rate data available)',
+                'activity_id': id,
+                'tss': 0.0,
+                'note': 'Activity has no heart rate data'
+            }), 200
+
+        return jsonify({
+            'message': 'TSS calculated successfully',
+            'activity_id': id,
+            'tss': tss
+        })
+
+    except Exception as e:
+        logging.error(f"Error calculating TSS for activity {id}: {str(e)}")
+        return jsonify({
+            'error': 'Failed to calculate TSS',
             'message': str(e)
         }), 500
 

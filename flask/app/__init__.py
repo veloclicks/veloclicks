@@ -155,7 +155,10 @@ def create_app(*args, **kwargs) -> Flask:
 
     from app.strava import strava_bp
     app.register_blueprint(strava_bp)
-    
+
+    # Register CLI commands
+    from app.admin.cli import admin
+    app.cli.add_command(admin)
 
     # Debug: Print all registered routes
     #print("=== ALL REGISTERED ROUTES ===")
