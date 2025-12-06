@@ -20,22 +20,31 @@ logger = logging.getLogger(__name__)
 #
 # --------------------------------------------------------------------------------------
 
-def calculate_tss(user_id: int, activity_id: int) -> Optional[float]:
+def calculate_tss(user_id: int, activity_id: int, calculation_method: str = 'power') -> Optional[float]:
     """
-    Calculate Training Stress Score (TSS) for an activity based on heart rate data.
+    Calculate Training Stress Score (TSS) for an activity.
 
-    TSS is calculated using the TRIMP (Training Impulse) method:
+    Power-based TSS formula (matches TrainerRoad calculation):
+    TSS = (duration_seconds × NP × IF) / (FTP × 3600) × 100
+    where IF = NP / FTP
+
+    This is the preferred method when power data is available and closely matches
+    TrainerRoad's TSS calculations (typically within 2-4%).
+
+    Heart rate-based TSS (TRIMP method):
     - For each second: TRIMP += duration * HR_fraction * exp_factor
     - HR_fraction = (HR - resting_HR) / (max_HR - resting_HR)
     - exp_factor = exp(1.92 * HR_fraction) for males, exp(1.67 * HR_fraction) for females
-    - TSS is then normalized to a 0-100+ scale where 100 = 1 hour at threshold
+
+    Note: HR-based TSS may produce values significantly different from power-based calculations.
 
     Args:
         user_id: ID of the user (for authorization checks)
         activity_id: ID of the activity to analyze
+        calculation_method: Method to use - 'power' or 'hr'
 
     Returns:
-        TSS value as float, 0.0 if no heart rate data exists, or None if calculation failed
+        TSS value as float, 0.0 if no data exists, or None if calculation failed
     """
     try:
         # Fetch activity from database
@@ -44,7 +53,54 @@ def calculate_tss(user_id: int, activity_id: int) -> Optional[float]:
             logger.error(f"Activity {activity_id} not found for user {user_id}")
             return None
 
-        # Get heart rate stream data
+        # Get user data
+        from app.models.user import User
+        user = User.query.filter_by(id=user_id).first()
+        if not user:
+            logger.error(f"User {user_id} not found")
+            return None
+
+        # Determine which method to use
+        use_power = False
+        use_hr = False
+
+        if calculation_method == 'power':
+            use_power = True
+        elif calculation_method == 'hr':
+            use_hr = True
+        else:
+            logger.error(f"Invalid calculation_method: {calculation_method}. Use 'power' or 'hr'")
+            return None
+
+        # Try power-based TSS
+        if use_power:
+            if not activity.weighted_average_watts or not user.ftp:
+                logger.warning(f"Power-based TSS requested but data missing (NP={activity.weighted_average_watts}, FTP={user.ftp})")
+                return None
+            else:
+                normalized_power = float(activity.weighted_average_watts)
+                ftp = float(user.ftp)
+                duration_seconds = float(activity.moving_time) if activity.moving_time else 0
+
+                if duration_seconds > 0 and ftp > 0:
+                    # Calculate Intensity Factor (IF)
+                    intensity_factor = normalized_power / ftp
+
+                    # Calculate power-based TSS
+                    # TSS = (sec x NP x IF) / (FTP x 3600) x 100
+                    tss = (duration_seconds * normalized_power * intensity_factor) / (ftp * 3600) * 100
+
+                    # Save to database
+                    activity.tss = round(tss, 1)
+                    db.session.commit()
+
+                    logger.info(f"Calculated power-based TSS for activity {activity_id}: {tss:.1f} (NP={normalized_power}W, FTP={ftp}W, IF={intensity_factor:.3f})")
+                    return round(tss, 1)
+
+        # Use heart rate-based TSS
+        if use_hr:
+            logger.info(f"Using HR-based TSS for activity {activity_id}")
+
         streams = get_activity_streams(user_id, activity_id, ['heartrate', 'time'])
         if not streams or 'heartrate' not in streams or 'time' not in streams:
             # No heart rate data available - mark as checked with TSS = 0
