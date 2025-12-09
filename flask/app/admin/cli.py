@@ -31,6 +31,8 @@ from sqlalchemy import extract
 from app.models import db
 from app.models.strava import Activity
 from app.strava.activity_utils import calculate_tss, calculate_power_metrics
+from app.profile.tools import get_profile
+from app.agent.orchestrator import generate_activity_insights
 
 logger = logging.getLogger(__name__)
 
@@ -56,11 +58,18 @@ def user_info(username):
     """
     from app.models.user import User
 
-    # Query user
+    # Query user to get user_id
     user = User.query.filter_by(email=username).first()
 
     if not user:
         click.echo(f"User not found: '{username}'", err=True)
+        return
+
+    # Get profile data using reusable tool
+    profile = get_profile(user.id)
+
+    if not profile:
+        click.echo(f"Error retrieving profile for user {user.id}", err=True)
         return
 
     # Display user information
@@ -68,17 +77,17 @@ def user_info(username):
     click.echo("USER INFORMATION")
     click.echo("=" * 80)
     click.echo(f"ID:               {user.id}")
-    click.echo(f"Email:            {user.email}")
-    click.echo(f"First Name:       {user.firstname or 'Not set'}")
-    click.echo(f"Last Name:        {user.lastname or 'Not set'}")
+    click.echo(f"Email:            {profile['email']}")
+    click.echo(f"Username:         {profile['username']}")
+    click.echo(f"First Name:       {profile['firstname'] or 'Not set'}")
+    click.echo(f"Last Name:        {profile['lastname'] or 'Not set'}")
     click.echo(f"Membership Type:  {user.membership_type or 'Not set'}")
-    click.echo(f"Sex:              {user.sex or 'Not set'}")
-    click.echo(f"Date of Birth:    {user.date_of_birth.strftime('%Y-%m-%d') if user.date_of_birth else 'Not set'}")
-    click.echo(f"FTP:              {user.ftp or 'Not set'}")
-    click.echo(f"Max Heart Rate:   {user.max_heart_rate or 'Not set'}")
-    click.echo(f"Resting HR:       {user.resting_heart_rate or 'Not set'}")
-    #click.echo(f"Created:          {user.created_at.strftime('%Y-%m-%d %H:%M:%S') if user.created_at else 'Unknown'}")
-    
+    click.echo(f"Sex:              {profile['sex'] or 'Not set'}")
+    click.echo(f"Date of Birth:    {profile['date_of_birth'] or 'Not set'}")
+    click.echo(f"FTP:              {profile['ftp'] or 'Not set'}")
+    click.echo(f"Max Heart Rate:   {profile['max_heart_rate'] or 'Not set'}")
+    click.echo(f"Resting HR:       {profile['resting_heart_rate'] or 'Not set'}")
+
     click.echo("=" * 80)
 
 
@@ -443,3 +452,44 @@ def calculate_tss_command(user_id, year, month, skip_existing):
     click.echo(f"Skipped: {skipped}")
     click.echo(f"Failed:  {failed}")
     click.echo("=" * 80)
+
+
+# --------------------------------------------------------------------------------------
+#
+#                                  AI INSIGHTS
+#
+# --------------------------------------------------------------------------------------
+@admin.command('activity-insights')
+@click.option('--user-id', required=True, type=int, help='User ID')
+@click.option('--activity-id', required=True, type=int, help='Activity ID')
+@with_appcontext
+def activity_insights(user_id, activity_id):
+    """
+    Generate AI-powered insights for an activity.
+    """
+    click.echo("=" * 80)
+    click.echo(f"ACTIVITY INSIGHTS - User: {user_id}, Activity: {activity_id}")
+    click.echo("=" * 80)
+
+    # Fetch activity
+    activity = Activity.query.filter_by(id=activity_id, user_id=user_id).first()
+    if not activity:
+        click.echo(f"Error: Activity {activity_id} not found for user {user_id}", err=True)
+        return
+
+    # Delegate to agent orchestrator
+    print(f"--------> activity_insights generating insights for: {activity_id}")
+    result = generate_activity_insights(activity)
+
+    if result['success']:
+        click.echo("\n" + result['insights'])
+        click.echo("\n" + "=" * 80)
+        if 'token_usage' in result:
+            usage = result['token_usage']
+            click.echo(f"Token Usage: {usage['total_tokens']:,} total ({usage['input_tokens']:,} in, {usage['output_tokens']:,} out)")
+            # Rough cost estimate (as of 2024 pricing)
+            cost = (usage['input_tokens'] * 0.003 / 1000) + (usage['output_tokens'] * 0.015 / 1000)
+            click.echo(f"Estimated Cost: ${cost:.4f}")
+        click.echo("=" * 80)
+    else:
+        click.echo(f"Error: {result['error']}", err=True)

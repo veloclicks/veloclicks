@@ -156,6 +156,12 @@ def create_app(*args, **kwargs) -> Flask:
     from app.strava import strava_bp
     app.register_blueprint(strava_bp)
 
+    from app.agent import agent_bp
+    app.register_blueprint(agent_bp)
+
+    from app.insights import insights_bp
+    app.register_blueprint(insights_bp)
+
     # Register CLI commands
     from app.admin.cli import admin
     app.cli.add_command(admin)
