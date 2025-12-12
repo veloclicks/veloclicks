@@ -378,7 +378,7 @@ def get_activity_streams(user_id, activity_id, stream_types=['latlng']):
                 else:
                     logging.warning(f"get_activity_streams() stream type '{stream_type}' not available for activity {activity_id}")
 
-            logging.info(f"get_activity_streams() successfully retrieved {len(filtered_streams)} of {len(stream_types)} requested stream types")
+            logging.info(f"get_activity_streams() successfully retrieved {stream_types}")
             return filtered_streams
         elif response.status_code == 404:
             logging.warning(f"get_activity_streams() activity {activity_id} not found or no stream data available")

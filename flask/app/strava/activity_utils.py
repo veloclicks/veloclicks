@@ -191,10 +191,16 @@ def calculate_tss(user_id: int, activity_id: int, calculation_method: str = 'pow
 def _generate_power_curve_durations(activity_duration_seconds: int) -> List[int]:
     """
     Generate list of durations (in seconds) for power curve calculation.
-    Uses high granularity optimized for cycling power analysis:
-    - 1s to 2hr: every second (7,200 points)
-    - 2hr to 12hr: every 5 seconds (~7,200 points)
-    - Max supported duration: 12 hours
+    Optimized for real-world ride distribution and Lambda performance:
+    - 0-20min: every 1s (1,200 points) - FTP estimation critical zone
+    - 20min-2hr: every 5s (1,200 points) - most common ride lengths
+    - 2hr-6hr: every 2min (120 points) - weekend long rides
+
+    Maximum supported duration: 6 hours
+    Total for common rides:
+      - 1hr: 1,920 points (~4-5s execution)
+      - 2hr: 2,400 points (~5-7s execution)
+      - 6hr: 2,520 points (~6-8s execution)
 
     Args:
         activity_duration_seconds: Total duration of the activity in seconds
@@ -203,21 +209,24 @@ def _generate_power_curve_durations(activity_duration_seconds: int) -> List[int]
         List of duration values in seconds
     """
     durations = []
+    six_hours = 6 * 3600  # 21,600 seconds
 
-    # Cap at 12 hours maximum
-    twelve_hours = 12 * 3600  # 43,200 seconds
-    max_duration = min(activity_duration_seconds, twelve_hours)
-
-    # Phase 1: 1 second to 2 hours (every second)
-    two_hours = 2 * 3600  # 7,200 seconds
-    if max_duration >= 1:
-        phase1_end = min(max_duration, two_hours)
+    # 0-20 minutes: every 1 second (1,200 points) - FTP critical zone
+    twenty_min = 20 * 60  # 1,200 seconds
+    if activity_duration_seconds >= 1:
+        phase1_end = min(activity_duration_seconds, twenty_min)
         durations.extend(range(1, phase1_end + 1))
 
-    # Phase 2: 2 hours to 12 hours (every 5 seconds)
-    if max_duration > two_hours:
-        phase2_start = two_hours + 5
-        durations.extend(range(phase2_start, max_duration + 1, 5))
+    # 20min-2hr: every 5 seconds (1,200 points) - common ride length
+    two_hours = 2 * 3600  # 7,200 seconds
+    if activity_duration_seconds > twenty_min:
+        phase2_end = min(activity_duration_seconds, two_hours)
+        durations.extend(range(twenty_min + 5, phase2_end + 1, 5))
+
+    # 2hr-6hr: every 2 minutes (120 points) - long weekend rides
+    if activity_duration_seconds > two_hours:
+        phase3_end = min(activity_duration_seconds, six_hours)
+        durations.extend(range(two_hours + 120, phase3_end + 1, 120))
 
     return durations
 
@@ -239,12 +248,21 @@ def calculate_power_curve(user_id: int, activity_id: int) -> Optional[Dict[int, 
         empty dict {} if no power data exists,
         or None if calculation failed
     """
+    logger.info(f"calculate_power_curve for activity {activity_id}")
     try:
         # Fetch activity from database
         activity = Activity.query.filter_by(id=activity_id, user_id=user_id).first()
         if not activity:
             logger.error(f"Activity {activity_id} not found for user {user_id}")
             return None
+
+        # Check activity duration - only support up to 6 hours
+        six_hours = 6 * 3600
+        if activity.moving_time and activity.moving_time > six_hours:
+            logger.warning(f"Activity {activity_id} duration ({activity.moving_time}s) exceeds 6hr limit - power curve not supported")
+            activity.power_curve_data = '{}'
+            db.session.commit()
+            return {}
 
         # Get power stream data
         streams = get_activity_streams(user_id, activity_id, ['watts', 'time'])
@@ -257,6 +275,7 @@ def calculate_power_curve(user_id: int, activity_id: int) -> Optional[Dict[int, 
 
         watts_data = streams['watts']['data']
         time_data = streams['time']['data']
+        logger.info(f"Retrieved {len(watts_data)} power data points for activity {activity_id}")
 
         if not watts_data or len(watts_data) == 0:
             # Empty power data - mark as checked with empty JSON
@@ -265,8 +284,10 @@ def calculate_power_curve(user_id: int, activity_id: int) -> Optional[Dict[int, 
             logger.warning(f"Empty power data for activity {activity_id}")
             return {}
 
+        logger.info(f"Converting {len(watts_data)} power points to numpy array")
         # Convert to numpy arrays for efficient computation
         watts_array = np.array(watts_data, dtype=float)
+        logger.info(f"Numpy conversion successful, calculating power curve")
 
         # Calculate activity duration
         activity_duration = time_data[-1] if time_data else len(watts_data)
@@ -320,6 +341,7 @@ def calculate_power_distribution(user_id: int, activity_id: int) -> Optional[Dic
         empty dict {} if no power data exists,
         or None if calculation failed
     """
+    logger.info(f"calculate_power_distribution for activity {activity_id}")
     try:
         # Fetch activity from database
         activity = Activity.query.filter_by(id=activity_id, user_id=user_id).first()
@@ -347,8 +369,11 @@ def calculate_power_distribution(user_id: int, activity_id: int) -> Optional[Dic
         # Get user's power zones
         zones = get_user_zones(user_id, ZoneType.POWER)
         if not zones:
-            logger.warning(f"No power zones configured for user {user_id}")
-            return None
+            logger.warning(f"No power zones configured for user {user_id} - FTP not set")
+            # Mark as checked with empty JSON since zones aren't configured
+            activity.time_in_zones = '{}'
+            db.session.commit()
+            return {}
 
         # Initialize time counters for each zone
         time_in_zones = {zone['name']: 0 for zone in zones}
@@ -399,7 +424,10 @@ def calculate_power_metrics(user_id: int, activity_id: int) -> Dict[str, Optiona
     logger.info(f"Calculating power metrics for activity {activity_id}")
 
     power_curve = calculate_power_curve(user_id, activity_id)
+    logger.info(f"Power curve calculated for {activity_id}")
+    
     time_in_zones = calculate_power_distribution(user_id, activity_id)
+    logger.info(f"Time in zones calculated for {activity_id}")
 
     return {
         'power_curve': power_curve,

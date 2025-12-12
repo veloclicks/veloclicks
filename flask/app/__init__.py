@@ -80,12 +80,31 @@ def create_app(*args, **kwargs) -> Flask:
 
     # Configure logging based on environment
     import logging
+    import sys
+
     log_level = getattr(logging, app.config['LOG_LEVEL'].upper(), logging.INFO)
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+
+    # Configure root logger to output to stdout for CloudWatch compatibility
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+
+    # Remove existing handlers to avoid duplicates
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+
+    # Create console handler that writes to stdout
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(log_level)
+
+    # Create formatter
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S"
     )
+    console_handler.setFormatter(formatter)
+
+    # Add handler to root logger
+    root_logger.addHandler(console_handler)
 
     # Reduce noise from Zappa and other third-party loggers
     logging.getLogger('zappa').setLevel(logging.WARNING)

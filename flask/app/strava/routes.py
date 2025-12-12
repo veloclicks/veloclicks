@@ -209,7 +209,7 @@ def strava_auth():
 # -------------------------------------------------------------------------------------------
 @strava_bp.route('/synch/')
 def strava_synch():
-    print(f"/synch strava_synch() - syncing activities")
+    print(f"API ENDPOINT : /synch strava_synch() - syncing activities")
 
     user_id = _get_user_id_from_token()
     if not user_id:
@@ -258,7 +258,7 @@ def strava_synch():
 # -------------------------------------------------------------------------------------------
 @strava_bp.route('/activities/')
 def strava_activities():
-    logging.info('strava_activities()')
+    logging.info('API ENDPOINT : /activities')
 
     user_id = _get_user_id_from_token()
     if not user_id:
@@ -322,7 +322,7 @@ def strava_activities():
 @strava_bp.route('/strava/all_activities/') 
 def get_all_activities():
     
-    print('/strava/all_activities/')
+    print('API ENDPOINT : /strava/all_activities/')
     
     after_epoch     = TWENTY_TWENTY_TWO_START
     before_epoch    = TWENTY_TWENTY_FOUR_START
@@ -352,7 +352,7 @@ def get_all_activities():
 @strava_bp.route("/activity/<int:id>", methods=["GET"])
 def activity(id):
 
-    logging.info(f"/strava/activity/ received id: {id}")
+    logging.info(f"API ENDPOINT : /strava/activity/ received id: {id}")
 
     user_id = _get_user_id_from_token()
     if not user_id:
@@ -374,7 +374,7 @@ def activity(id):
 @strava_bp.route("/activity/<int:id>/streams", methods=["GET"])
 def activity_streams(id):
 
-    logging.info(f"/strava/activity/{id}/streams")
+    logging.info(f"API ENDPOINT : /strava/activity/{id}/streams")
 
     user_id = _get_user_id_from_token()
     if not user_id:
@@ -399,7 +399,7 @@ def activity_streams(id):
 @strava_bp.route("/activity/<int:id>/elevation-profile", methods=["GET"])
 def activity_elevation_profile(id):
 
-    logging.info(f"/strava/activity/{id}/elevation-profile")
+    logging.info(f"API ENDPOINT : /strava/activity/{id}/elevation-profile")
 
     user_id = _get_user_id_from_token()
     if not user_id:
@@ -424,7 +424,7 @@ def update_activity_rpe(id):
     Update the Rate of Perceived Exertion (RPE) for an activity.
     RPE should be an integer between 1-10.
     """
-    logging.info(f"/strava/activity/{id}/rpe")
+    logging.info(f"API ENDPOINT : /strava/activity/{id}/rpe")
 
     user_id = _get_user_id_from_token()
     if not user_id:
@@ -471,7 +471,7 @@ def bulk_update_activities_rpe():
     Update RPE for one or more activities in a single transaction.
     Request body: {"updates": [{"activity_id": 123, "rpe": 7}, ...]}
     """
-    logging.info(f"/strava/activities/rpe (bulk update)")
+    logging.info(f"API ENDPOINT : /strava/activities/rpe (bulk update)")
 
     user_id = _get_user_id_from_token()
     if not user_id:
@@ -512,7 +512,7 @@ def calculate_activity_power_metrics_endpoint(id):
     - Power curve (max average power for various durations)
     - Time in zones (seconds spent in each power zone)
     """
-    logging.info(f"/strava/activity/{id}/calculate-power-metrics")
+    logging.info(f"API ENDPOINT : /strava/activity/{id}/calculate-power-metrics")
 
     user_id = _get_user_id_from_token()
     if not user_id:
@@ -521,6 +521,7 @@ def calculate_activity_power_metrics_endpoint(id):
     # Verify activity exists and belongs to user
     activity = Activity.query.filter_by(id=id, user_id=user_id).first()
     if not activity:
+        logging.error(f"Activity not found : {id}")
         return jsonify({'error': 'Activity not found'}), 404
 
     # Import the calculation functions
@@ -530,19 +531,24 @@ def calculate_activity_power_metrics_endpoint(id):
     try:
         result = calculate_power_metrics(user_id, id)
 
-        if result['power_curve'] is None and result['time_in_zones'] is None:
+        # Check if any metrics were calculated (empty dict {} means no data/zones)
+        power_curve_available = result['power_curve'] is not None and len(result['power_curve']) > 0
+        time_in_zones_available = result['time_in_zones'] is not None and len(result['time_in_zones']) > 0
+
+        if not power_curve_available and not time_in_zones_available:
+            logging.warning(f"No power metrics calculated for activity {id} - likely no power data or FTP not configured")
             return jsonify({
                 'error': 'Failed to calculate power metrics',
-                'message': 'No power data available for this activity or calculation failed'
+                'message': 'No power data available for this activity or FTP not configured in profile'
             }), 404
 
         return jsonify({
             'message': 'Power metrics calculated successfully',
             'activity_id': id,
-            'power_curve_calculated': result['power_curve'] is not None,
-            'time_in_zones_calculated': result['time_in_zones'] is not None,
+            'power_curve_calculated': power_curve_available,
+            'time_in_zones_calculated': time_in_zones_available,
             'power_curve_points': len(result['power_curve']) if result['power_curve'] else 0,
-            'time_in_zones': result['time_in_zones']
+            'time_in_zones': result['time_in_zones'] if time_in_zones_available else {}
         })
 
     except Exception as e:
@@ -563,7 +569,7 @@ def calculate_activity_tss_endpoint(id):
     Calculate Training Stress Score (TSS) for an activity based on heart rate data.
     TSS is calculated using the TRIMP method and normalized to a 0-100+ scale.
     """
-    logging.info(f"/strava/activity/{id}/calculate-tss")
+    logging.info(f"API ENDPOINT : /strava/activity/{id}/calculate-tss")
 
     user_id = _get_user_id_from_token()
     if not user_id:
@@ -624,7 +630,7 @@ def monthly_synch():
         year (required): Year to sync activities for
         month (optional): Specific month (1-12). If not provided, syncs all months in the year.
     """
-    logging.info("/strava/monthly_synch")
+    logging.info("API ENDPOINT : /strava/monthly_synch")
 
     # Get authenticated user
     user_id = _get_user_id_from_token()
