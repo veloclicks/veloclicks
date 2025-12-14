@@ -441,13 +441,20 @@ const ActivitiesContent = () => {
                     }}
                   >
                     <td className="px-6 py-4 whitespace-nowrap text-sm" style={{ color: colors.mutedForeground }}>
-                      {new Date(activity.dateTime).toLocaleString('en-US', {
-                        year: 'numeric',
-                        month: 'numeric',
-                        day: 'numeric',
-                        hour: 'numeric',
-                        minute: '2-digit'
-                      })}
+                      {(() => {
+                        const date = new Date(activity.dateTime);
+                        const dateStr = date.toLocaleDateString('en-GB', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric'
+                        });
+                        const timeStr = date.toLocaleTimeString('en-GB', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: false
+                        });
+                        return `${dateStr} ${timeStr}`;
+                      })()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm activity-name" style={{ color: colors.foreground }} title={activity.name || 'Untitled'}>
                         <button onClick={() => window.location.href = `/activities/${activity.id}`} style={{background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', textAlign: 'left', width: '100%'}}>
