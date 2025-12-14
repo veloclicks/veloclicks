@@ -933,6 +933,54 @@ const ActivityDetailPage = () => {
                           <p className="text-xs mt-2 text-center" style={{ color: colors.mutedForeground }}>
                             Maximum average power sustained for different durations
                           </p>
+
+                          {/* Key Power Metrics Table */}
+                          <div className="mt-6">
+                            <h5 className="text-sm font-semibold mb-3" style={{ color: colors.foreground }}>
+                              Key Power Metrics
+                            </h5>
+                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+                              {[
+                                { duration: 5, label: '5s' },
+                                { duration: 10, label: '10s' },
+                                { duration: 15, label: '15s' },
+                                { duration: 60, label: '1min' },
+                                { duration: 300, label: '5min' },
+                                { duration: 1200, label: '20min' },
+                                { duration: 3600, label: '60min' }
+                              ].map(({ duration, label }) => {
+                                // Find the exact duration or the closest one
+                                const dataPoint = powerCurveData.find(d => d.duration === duration) ||
+                                                 powerCurveData.reduce((closest, current) => {
+                                                   if (current.duration > duration) return closest;
+                                                   return !closest || Math.abs(current.duration - duration) < Math.abs(closest.duration - duration)
+                                                     ? current
+                                                     : closest;
+                                                 }, null);
+
+                                return (
+                                  <div
+                                    key={duration}
+                                    className="p-3 rounded-lg text-center"
+                                    style={{
+                                      backgroundColor: colors.muted,
+                                      border: `1px solid ${colors.border}`
+                                    }}
+                                  >
+                                    <div className="text-xs font-medium mb-1" style={{ color: colors.mutedForeground }}>
+                                      {label}
+                                    </div>
+                                    <div className="text-xl font-bold" style={{ color: colors.accent }}>
+                                      {dataPoint ? dataPoint.watts.toFixed(0) : '-'}
+                                    </div>
+                                    <div className="text-xs" style={{ color: colors.mutedForeground }}>
+                                      watts
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
                         </div>
                       )}
 
