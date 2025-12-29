@@ -329,7 +329,7 @@ def calculate_metrics(user_id, year, month, skip_existing):
 @click.option('--user-id', required=True, type=int, help='User ID')
 @click.option('--year', required=True, type=int, help='Year (e.g., 2024)')
 @click.option('--month', type=int, help='Optional month (1-12)')
-@click.option('--skip-existing', is_flag=True, default=False, help='Skip activities that already have power metrics')
+@click.option('--skip-existing', is_flag=True, default=True, help='Skip activities that already have power metrics')
 @with_appcontext
 def calculate_power(user_id, year, month, skip_existing):
     """
@@ -396,7 +396,7 @@ def calculate_power(user_id, year, month, skip_existing):
 @click.option('--user-id', required=True, type=int, help='User ID')
 @click.option('--year', required=True, type=int, help='Year (e.g., 2024)')
 @click.option('--month', type=int, help='Optional month (1-12)')
-@click.option('--skip-existing', is_flag=True, default=False, help='Skip activities that already have TSS calculated')
+@click.option('--skip-existing', is_flag=True, default=True, help='Skip activities that already have TSS calculated')
 @with_appcontext
 def calculate_tss_command(user_id, year, month, skip_existing):
     """

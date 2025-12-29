@@ -6,5 +6,4 @@ from app import create_app
 # retrieved and returned
 print("make_celery() : Calling create_app(isCelery=True)")
 flask_app = create_app(isCelery=True)
-
 celery_app = flask_app.extensions["celery"]

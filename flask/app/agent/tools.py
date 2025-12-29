@@ -24,7 +24,7 @@ def get_tool_definitions():
         },
         {
             "name": "get_activity_power_curve",
-            "description": "Get the power curve for an activity. Returns maximum average power the athlete sustained for various durations (1 second to 12 hours). Useful for identifying peak efforts and comparing performance.",
+            "description": "Get the power curve for an activity. Returns maximum average power sustained at key durations (5s, 10s, 15s, 30s, 1min, 2min, 3min, 5min, 8min, 10min, 12min, 15min, 20min, 30min, 40min, 1hr, 90min, 2hr, 3hr, 4hr, 5hr, 6hr). Useful for identifying peak efforts, FTP estimation (20min power), and comparing performance across different effort durations.",
             "input_schema": {
                 "type": "object",
                 "properties": {

@@ -3,9 +3,9 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from celery import Celery, Task
 from flask_cors import CORS
-# Flask-Limiter: Works locally and in Docker, but not compatible with AWS Lambda
-# from flask_limiter import Limiter
-# from flask_limiter.util import get_remote_address
+import logging
+import sys
+
 
 #
 # Test broker connection to redis
@@ -24,18 +24,19 @@ def test_broker_connection(broker_url):
         raise
 
 #
-# initialise celery with a Flask instance
+# initialise celery with a Flask instance passed in as the app variable
+# Note that the main init methos is below this one
 #
 def celery_init_app(app: Flask) -> Celery:
-    print('celery_init_app()')
+    print('__init__.py >> celery_init_app()')
     
     # get config that was added to the app
     celery_config = app.config.get('CELERY')
 
     # Access specific keys
-    broker_url = app.config['CELERY']['broker_url']
-    result_backend = app.config['CELERY']['result_backend']
-    ignore_result = app.config['CELERY']['task_ignore_result']
+    broker_url      = app.config['CELERY']['broker_url']
+    result_backend  = app.config['CELERY']['result_backend']
+    ignore_result   = app.config['CELERY']['task_ignore_result']
     
     # test broiker connetivity
     test_broker_connection(broker_url)
@@ -69,22 +70,18 @@ def celery_init_app(app: Flask) -> Celery:
 # If its celery I don't instantiate the database as its already there
 #
 def create_app(*args, **kwargs) -> Flask:
-    # Extract parameters from kwargs
+    print("__init__.py create_app()")
+    
     is_celery   = kwargs.get('isCelery', False)
-
     app = Flask(__name__)
 
     # load configuration from Config.py
+    print("__init__.py create_app() >> Loading config from app.config.Config")
     from app.config import Config
     app.config.from_object(Config)
-
-    # Configure logging based on environment
-    import logging
-    import sys
-
+    
+    # -------------- logging -----------------
     log_level = getattr(logging, app.config['LOG_LEVEL'].upper(), logging.INFO)
-
-    # Configure root logger to output to stdout for CloudWatch compatibility
     root_logger = logging.getLogger()
     root_logger.setLevel(log_level)
 
@@ -115,20 +112,11 @@ def create_app(*args, **kwargs) -> Flask:
 
     # Now we can access app.config for skip_celery
     skip_celery = kwargs.get('skipCelery', app.config.get('SKIP_CELERY', False))
-
+    print(f"__init__.py create_app() >> skip_celery is {skip_celery}")
 
     # make the app CORS compatible
     CORS(app)
 
-    # Rate limiting: Works locally and in Docker, but not compatible with AWS Lambda
-    # Consider using API Gateway throttling for Lambda deployments
-    # limiter = Limiter(
-    #     app=app,
-    #     key_func=get_remote_address,
-    #     default_limits=["100 per hour", "20 per minute"],
-    #     storage_uri="memory://",
-    #     strategy="fixed-window"
-    # )
 
     #
     # --- DATABASE INTIIALISATION - DON"T DO THIS IF THE FLASK APP IS BEING CREATED BY CELERY ----
@@ -167,11 +155,9 @@ def create_app(*args, **kwargs) -> Flask:
     from app.views.main import main_bp
     app.register_blueprint(main_bp, url_prefix='/')
     
-
     from app.views.api import api_bp
     app.register_blueprint(api_bp)
     
-
     from app.strava import strava_bp
     app.register_blueprint(strava_bp)
 
@@ -184,12 +170,6 @@ def create_app(*args, **kwargs) -> Flask:
     # Register CLI commands
     from app.admin.cli import admin
     app.cli.add_command(admin)
-
-    # Debug: Print all registered routes
-    #print("=== ALL REGISTERED ROUTES ===")
-    #for rule in app.url_map.iter_rules():
-    #    print(f"Route: {rule.rule} -> {rule.endpoint} (methods: {rule.methods})")
-    #print("==============================")
 
     #
     # If Celery is enabled, create the tasks

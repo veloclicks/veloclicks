@@ -7,7 +7,7 @@ import logging
 import os
 import anthropic
 from app.agent.tools import get_tool_definitions
-from app.strava.activity_utils import calculate_tss, calculate_power_curve, calculate_power_distribution, find_similar_activities
+from app.strava.activity_utils import calculate_tss, calculate_power_curve, calculate_power_distribution, find_similar_activities, get_key_power_curve_durations
 from app.profile.tools import get_profile
 from app.models.strava import Activity
 
@@ -34,6 +34,9 @@ def _execute_tool(tool_name: str, tool_input: dict, user_id: int, activity_id: i
 
         elif tool_name == "get_activity_power_curve":
             power_curve = calculate_power_curve(user_id, tool_input['activity_id'])
+            # Filter to key durations to reduce token usage
+            if power_curve and len(power_curve) > 0:
+                power_curve = get_key_power_curve_durations(power_curve)
             return {'activity_id': tool_input['activity_id'], 'power_curve': power_curve}
 
         elif tool_name == "get_activity_power_distribution":

@@ -232,6 +232,44 @@ def _generate_power_curve_durations(activity_duration_seconds: int) -> List[int]
 
 
 
+def get_key_power_curve_durations(power_curve: Dict[int, float]) -> Dict[int, float]:
+    """
+    Filter power curve data to return only key durations for analysis.
+    This reduces token usage when sending data to LLM agents while preserving
+    the most important data points for training analysis.
+
+    Key durations selected:
+    - Sprint efforts: 5s, 10s, 15s, 30s
+    - Short efforts: 1min, 2min, 3min, 5min
+    - Threshold efforts: 8min, 10min, 12min, 15min, 20min
+    - FTP/Long efforts: 30min, 40min, 60min (1hr), 90min, 120min (2hr)
+    - Ultra endurance: 3hr, 4hr, 5hr, 6hr
+
+    Args:
+        power_curve: Full power curve dictionary mapping duration to power
+
+    Returns:
+        Filtered dictionary with only key durations (approximately 25 data points vs 2000+)
+    """
+    # Define key durations in seconds
+    key_durations = [
+        5, 10, 15, 30,                                    # Sprint (4 points)
+        60, 120, 180, 300,                                # Short (4 points)
+        480, 600, 720, 900, 1200,                         # Threshold (5 points)
+        1800, 2400, 3600, 5400, 7200,                     # FTP/Long (5 points)
+        10800, 14400, 18000, 21600                        # Ultra (4 points)
+    ]
+
+    filtered_curve = {}
+
+    for duration in key_durations:
+        if duration in power_curve:
+            filtered_curve[duration] = power_curve[duration]
+
+    logger.info(f"Filtered power curve from {len(power_curve)} to {len(filtered_curve)} key data points")
+    return filtered_curve
+
+
 def calculate_power_curve(user_id: int, activity_id: int) -> Optional[Dict[int, float]]:
     """
     Calculate power curve for an activity and save to database.
