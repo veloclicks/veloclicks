@@ -6,145 +6,169 @@ Handles all LLM interactions and tool calling for generating insights.
 import logging
 import os
 import anthropic
-from app.agent.tools import get_tool_definitions
-from app.strava.activity_utils import calculate_tss, calculate_power_curve, calculate_power_distribution, find_similar_activities, get_key_power_curve_durations
-from app.profile.tools import get_profile
-from app.models.strava import Activity
+from app.agent import agent_tools
+from app.profile import tools as profile_tools
 
 logger = logging.getLogger(__name__)
 
+# Prompt templates for different detail levels
+SIMPLE_ACTIVITY_PROMPT = """Provide a brief analysis of this cycling activity based on the metrics:
 
-def _execute_tool(tool_name: str, tool_input: dict, user_id: int, activity_id: int):
-    """
-    Execute a tool call by routing to the appropriate domain function.
+Activity: {name}
+Activity Id: {id}
+Type: {type}
+Date: {date}
+Distance: {distance}m
+Moving Time: {moving_time}s
+Elapsed Time: {elapsed_time}s
+Average Power: {average_watts}W
+Normalized Power: {weighted_average_watts}W
+Average Heart Rate: {average_heartrate} bpm
+Max Heart Rate: {max_heartrate} bpm
+Elevation Gain: {elevation_gain}m
 
-    Args:
-        tool_name: Name of the tool to execute
-        tool_input: Parameters for the tool
-        user_id: User ID for authorization
-        activity_id: Current activity ID (for context)
+Athlete Profile:
+FTP: {ftp}W
+Max Heart Rate: {profile_max_hr} bpm
+Resting Heart Rate: {resting_hr} bpm
+Sex: {sex}
+Power Zones: {power_zones}
+Heart Rate Zones: {hr_zones}
 
-    Returns:
-        Tool execution result
-    """
-    try:
-        if tool_name == "get_activity_tss":
-            tss = calculate_tss(user_id, tool_input['activity_id'], calculation_method='power')
-            return {'activity_id': tool_input['activity_id'], 'tss': tss}
+Provide a concise 2-3 paragraph analysis covering:
+1. Overall workout quality and intensity
+2. Key highlights based on the power and duration data compared to users ftp and heart rate
+3. Likely training benefit
 
-        elif tool_name == "get_activity_power_curve":
-            power_curve = calculate_power_curve(user_id, tool_input['activity_id'])
-            # Filter to key durations to reduce token usage
-            if power_curve and len(power_curve) > 0:
-                power_curve = get_key_power_curve_durations(power_curve)
-            return {'activity_id': tool_input['activity_id'], 'power_curve': power_curve}
+Keep it brief and actionable."""
 
-        elif tool_name == "get_activity_power_distribution":
-            time_in_zones = calculate_power_distribution(user_id, tool_input['activity_id'])
-            return {'activity_id': tool_input['activity_id'], 'time_in_zones': time_in_zones}
+DETAILED_ACTIVITY_PROMPT = """Analyze this cycling activity from a training perspective and provide comprehensive insights:
 
-        elif tool_name == "get_activity_basic_info":
-            activity = Activity.query.filter_by(id=tool_input['activity_id'], user_id=user_id).first()
-            if not activity:
-                return {'error': 'Activity not found'}
-            return {
-                'activity_id': activity.id,
-                'name': activity.name,
-                'type': activity.type,
-                'start_date': activity.start_date.isoformat() if activity.start_date else None,
-                'distance': activity.distance,
-                'moving_time': activity.moving_time,
-                'elapsed_time': activity.elapsed_time,
-                'average_watts': activity.average_watts,
-                'weighted_average_watts': activity.weighted_average_watts,
-                'average_heartrate': activity.average_heartrate,
-                'max_heartrate': activity.max_heartrate,
-                'elevation_gain': activity.total_elevation_gain
-            }
+Activity: {name}
+Activity Id: {id}
+Type: {type}
+Date: {date}
+Distance: {distance}m
+Moving Time: {moving_time}s
+Elapsed Time: {elapsed_time}s
+Average Power: {average_watts}W
+Normalized Power: {weighted_average_watts}W
+Average Heart Rate: {average_heartrate} bpm
+Max Heart Rate: {max_heartrate} bpm
+Elevation Gain: {elevation_gain}m
 
-        elif tool_name == "get_similar_activities":
-            days_back = tool_input.get('days_back', 90)
-            limit = tool_input.get('limit', 10)
-            similar = find_similar_activities(user_id, tool_input['activity_id'], days_back, limit)
-            return {
-                'reference_activity_id': tool_input['activity_id'],
-                'similar_activities': similar,
-                'count': len(similar) if similar else 0
-            }
-
-        elif tool_name == "get_user_profile":
-            profile = get_profile(user_id)
-            if not profile:
-                return {'error': 'Profile not found'}
-            # Return only training-relevant data
-            return {
-                'ftp': profile['ftp'],
-                'max_heart_rate': profile['max_heart_rate'],
-                'resting_heart_rate': profile['resting_heart_rate'],
-                'sex': profile['sex'],
-                'zones': profile['zones']
-            }
-
-        else:
-            return {'error': f'Unknown tool: {tool_name}'}
-
-    except Exception as e:
-        logger.error(f"Error executing tool {tool_name}: {str(e)}")
-        return {'error': str(e)}
-
-
-def generate_activity_insights(activity):
-    """
-    Generate AI-powered insights for an activity.
-
-    Args:
-        activity: Activity model instance
-
-    Returns:
-        dict: Contains 'success' boolean and either 'insights' text or 'error' message
-    """
-    print(f">>>>>> orchestrator getting insights for Activity with id{activity.id}")
-    try:
-        # Get Anthropic API key from environment
-        api_key = os.getenv('ANTHROPIC_API_KEY')
-        if not api_key:
-            logger.error("ANTHROPIC_API_KEY not set in environment")
-            return {
-                'success': False,
-                'error': 'AI service not configured'
-            }
-
-        # Initialize Anthropic client
-        client = anthropic.Anthropic(api_key=api_key)
-
-        # Get tool definitions
-        tools = get_tool_definitions()
-
-        # Initial prompt to the AI
-        initial_message = f"""Analyze this cycling activity from a training perspective and provide insights:
-
-Activity: {activity.name}
-Activity Id: {activity.id}
-Type: {activity.type}
-Date: {activity.start_date}
-Distance: {activity.distance}m
-Moving Time: {activity.moving_time}s
-Average Power: {activity.average_watts}W
-Normalized Power: {activity.weighted_average_watts}W
+Athlete Profile:
+FTP: {ftp}W
+Max Heart Rate: {profile_max_hr} bpm
+Resting Heart Rate: {resting_hr} bpm
+Sex: {sex}
+Power Zones: {power_zones}
+Heart Rate Zones: {hr_zones}
 
 Please provide:
 1. Overall assessment of the workout quality and intensity
 2. Key performance highlights (peak efforts, sustained power, etc.)
 3. Training value and adaptations this workout likely provides
 4. Any notable patterns in power distribution
+5. Comparison to similar recent activities (if relevant)
 
-Use the available tools to get detailed metrics like TSS, power curve, and power distribution to support your analysis."""
+Use the available tools to get detailed metrics like TSS, power curve, power distribution, and similar activities to support your analysis."""
+
+
+def _get_anthropic_client():
+    """
+    Get configured Anthropic API client.
+
+    Returns:
+        anthropic.Anthropic: Configured client
+
+    Raises:
+        ValueError: If ANTHROPIC_API_KEY is not set
+    """
+    api_key = os.getenv('ANTHROPIC_API_KEY')
+    if not api_key:
+        logger.error("ANTHROPIC_API_KEY not set in environment")
+        raise ValueError("AI service not configured")
+
+    return anthropic.Anthropic(api_key=api_key)
+
+
+def run_agent_workflow(activity, detail_level='simple'):
+    """
+    Execute the LLM agent workflow with tool calling loop for activity analysis.
+
+    Args:
+        activity: Activity model instance
+        detail_level: 'simple' (quick analysis, no tools) or 'detailed' (comprehensive with tools)
+
+    Returns:
+        dict: Contains 'success' boolean and either 'insights' text or 'error' message
+    """
+    print(f">>>>>> orchestrator running agent workflow for Activity {activity.id} with detail_level={detail_level}")
+    try:
+        # Get Anthropic client
+        client = _get_anthropic_client()
+
+        # Get user profile data to include in prompt (used by both simple and detailed)
+        profile = profile_tools.get_profile(activity.user_id)
+        if not profile:
+            logger.error(f"Profile not found for user {activity.user_id}")
+            return {
+                'success': False,
+                'error': 'User profile not found'
+            }
+
+        # Format zones for display (filter by type since zones is a list)
+        all_zones = profile['zones']
+        power_zones = [z for z in all_zones if z.get('type') == 'power']
+        hr_zones = [z for z in all_zones if z.get('type') == 'heart_rate']
+
+        power_zones_str = "\n".join([f"  {z['display_name']}: {z['min_value']}-{z['max_value']}W"
+                                     for z in power_zones])
+        hr_zones_str = "\n".join([f"  {z['display_name']}: {z['min_value']}-{z['max_value']} bpm"
+                                  for z in hr_zones])
+
+        # Prepare context data for prompt formatting (same for both detail levels)
+        prompt_context = {
+            'name': activity.name,
+            'id': activity.id,
+            'type': activity.type,
+            'date': activity.start_date,
+            'distance': activity.distance,
+            'moving_time': activity.moving_time,
+            'elapsed_time': activity.elapsed_time,
+            'average_watts': activity.average_watts,
+            'weighted_average_watts': activity.weighted_average_watts,
+            'average_heartrate': activity.average_heartrate or 'N/A',
+            'max_heartrate': activity.max_heartrate or 'N/A',
+            'elevation_gain': activity.total_elevation_gain or 0,
+            'ftp': profile['ftp'] or 'Not set',
+            'profile_max_hr': profile['max_heart_rate'] or 'Not set',
+            'resting_hr': profile['resting_heart_rate'] or 'Not set',
+            'sex': profile['sex'] or 'Not specified',
+            'power_zones': power_zones_str if power_zones_str else 'Not configured',
+            'hr_zones': hr_zones_str if hr_zones_str else 'Not configured'
+        }
+
+        # Configure based on detail level
+        if detail_level == 'simple':
+            # Simple: No tools, brief analysis
+            tools = []
+            initial_message = SIMPLE_ACTIVITY_PROMPT.format(**prompt_context)
+            max_tokens = 800
+            max_iterations = 1  # No tool calling for simple
+            max_tokens_total = 1000
+        else:
+            # Detailed: Full tool access, comprehensive analysis
+            tools = agent_tools.get_tool_definitions()
+            initial_message = DETAILED_ACTIVITY_PROMPT.format(**prompt_context)
+            max_tokens = 4096
+            max_iterations = 10
+            max_tokens_total = 50000
 
         messages = [{"role": "user", "content": initial_message}]
 
         # Tool calling loop with cost tracking
-        max_iterations = 10
-        max_tokens_total = 50000  # Stop if we exceed 50K tokens (~$1-2 cost) to prevent runaway costs
         iteration = 0
         total_input_tokens = 0
         total_output_tokens = 0
@@ -154,12 +178,17 @@ Use the available tools to get detailed metrics like TSS, power curve, and power
             logger.info(f"Anthropic API call iteration {iteration}")
 
             # Call Anthropic API
-            response = client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=4096,
-                tools=tools,
-                messages=messages
-            )
+            # Build request parameters
+            request_params = {
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": max_tokens,
+                "messages": messages
+            }
+            # Only include tools if we have any
+            if tools:
+                request_params["tools"] = tools
+
+            response = client.messages.create(**request_params)
 
             # Track token usage
             total_input_tokens += response.usage.input_tokens
@@ -206,7 +235,7 @@ Use the available tools to get detailed metrics like TSS, power curve, and power
                         logger.info(f"Executing tool: {block.name} with input: {block.input}")
 
                         # Execute the tool
-                        result = _execute_tool(block.name, block.input, activity.user_id, activity.id)
+                        result = agent_tools.execute_tool(block.name, block.input, activity.user_id, activity.id)
 
                         # Add result to tool_results
                         tool_results.append({
@@ -229,6 +258,12 @@ Use the available tools to get detailed metrics like TSS, power curve, and power
             'error': 'Analysis took too many steps'
         }
 
+    except ValueError as e:
+        # API key not configured
+        return {
+            'success': False,
+            'error': str(e)
+        }
     except Exception as e:
         logger.error(f"Error generating insights for activity {activity.id}: {str(e)}")
         return {

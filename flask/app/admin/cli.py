@@ -32,7 +32,7 @@ from app.models import db
 from app.models.strava import Activity
 from app.strava.activity_utils import calculate_tss, calculate_power_metrics
 from app.profile.tools import get_profile
-from app.agent.orchestrator import generate_activity_insights
+from app.insights.tools import generate_activity_insights
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,19 @@ logger = logging.getLogger(__name__)
 
 @click.group()
 def admin():
-    """Administrative batch operations."""
+    """
+    Administrative batch operations for VeloClicks.
+
+    Available commands:
+      user-info            Display user information by username (email)
+      list-activities      List activities for a user in a specific month
+      calculate-metrics    Calculate all metrics (power + TSS) for activities
+      calculate-power      Calculate only power metrics (curve + zones)
+      calculate-tss        Calculate only TSS for activities
+      activity-insights    Generate AI-powered insights for an activity
+
+    Use 'flask admin COMMAND --help' for detailed help on each command.
+    """
     pass
 
 
@@ -462,13 +474,14 @@ def calculate_tss_command(user_id, year, month, skip_existing):
 @admin.command('activity-insights')
 @click.option('--user-id', required=True, type=int, help='User ID')
 @click.option('--activity-id', required=True, type=int, help='Activity ID')
+@click.option('--detail-level', type=click.Choice(['simple', 'detailed']), default='simple', help='Level of detail: simple (quick, default) or detailed (comprehensive)')
 @with_appcontext
-def activity_insights(user_id, activity_id):
+def activity_insights(user_id, activity_id, detail_level):
     """
-    Generate AI-powered insights for an activity.
+    Generate AI-powered insights for an activity (CLI command).
     """
     click.echo("=" * 80)
-    click.echo(f"ACTIVITY INSIGHTS - User: {user_id}, Activity: {activity_id}")
+    click.echo(f"ACTIVITY INSIGHTS - User: {user_id}, Activity: {activity_id}, Detail: {detail_level}")
     click.echo("=" * 80)
 
     # Fetch activity
@@ -477,9 +490,9 @@ def activity_insights(user_id, activity_id):
         click.echo(f"Error: Activity {activity_id} not found for user {user_id}", err=True)
         return
 
-    # Delegate to agent orchestrator
-    print(f"--------> activity_insights generating insights for: {activity_id}")
-    result = generate_activity_insights(activity)
+    # Generate insights (CLI runs with admin override)
+    print(f"--------> activity_insights generating insights for: {activity_id} with detail_level={detail_level}")
+    result = generate_activity_insights(activity, is_admin=True, detail_level=detail_level)
 
     if result['success']:
         click.echo("\n" + result['insights'])

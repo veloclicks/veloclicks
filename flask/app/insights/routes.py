@@ -5,8 +5,9 @@ User-facing insights API endpoints.
 import logging
 from flask import jsonify, request, current_app
 from app.insights import insights_bp
+from app.insights.tools import generate_activity_insights
 from app.models.strava import Activity
-from app.agent.orchestrator import generate_activity_insights
+from app.models.user import User, MembershipType
 import jwt
 
 logger = logging.getLogger(__name__)
@@ -29,21 +30,37 @@ def _get_user_id_from_token():
 @insights_bp.route("/activity/<int:id>", methods=["GET"])
 def activity_insights(id):
     """
-    Generate AI-powered insights for an activity from a training perspective.
+    Generate AI-powered insights for an activity from a training perspective (user-facing endpoint, premium only).
+
+    Query params:
+        detail_level: 'simple' (default, quick analysis) or 'detailed' (comprehensive with tool calls)
     """
-    logging.info(f"/insights/activity/{id}")
+    # Get detail level from query params
+    detail_level = request.args.get('detail_level', 'simple')
+    if detail_level not in ['simple', 'detailed']:
+        return jsonify({"error": "detail_level must be 'simple' or 'detailed'"}), 400
+
+    logging.info(f"/insights/activity/{id}?detail_level={detail_level}")
 
     user_id = _get_user_id_from_token()
     if not user_id:
         return jsonify({"error": "Authentication required"}), 401
+
+    # Check premium membership
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if user.membership_type != MembershipType.PREMIUM_TIER:
+        return jsonify({"error": "Premium membership required for AI-powered insights"}), 403
 
     # Verify activity exists and belongs to user
     activity = Activity.query.filter_by(id=id, user_id=user_id).first()
     if not activity:
         return jsonify({'error': 'Activity not found'}), 404
 
-    # Delegate to agent orchestrator
-    result = generate_activity_insights(activity)
+    # Generate insights
+    result = generate_activity_insights(activity, detail_level=detail_level)
 
     if result['success']:
         return jsonify({

@@ -3,6 +3,59 @@ Tool definitions for Anthropic Claude API.
 These define what functions the AI agent can call to get activity data.
 """
 
+import logging
+from app.strava.activity_utils import calculate_tss, calculate_power_curve, calculate_power_distribution, find_similar_activities, get_key_power_curve_durations
+
+logger = logging.getLogger(__name__)
+
+
+def execute_tool(tool_name: str, tool_input: dict, user_id: int, activity_id: int):
+    """
+    Execute a tool call by routing to the appropriate domain function.
+
+    Args:
+        tool_name: Name of the tool to execute
+        tool_input: Parameters for the tool
+        user_id: User ID for authorization
+        activity_id: Current activity ID (for context)
+
+    Returns:
+        Tool execution result
+    """
+    try:
+        if tool_name == "get_activity_tss":
+            tss = calculate_tss(user_id, tool_input['activity_id'], calculation_method='power')
+            return {'activity_id': tool_input['activity_id'], 'tss': tss}
+
+        elif tool_name == "get_activity_power_curve":
+            power_curve = calculate_power_curve(user_id, tool_input['activity_id'])
+            # Filter to key durations to reduce token usage
+            if power_curve and len(power_curve) > 0:
+                power_curve = get_key_power_curve_durations(power_curve)
+            return {'activity_id': tool_input['activity_id'], 'power_curve': power_curve}
+
+        elif tool_name == "get_activity_power_distribution":
+            time_in_zones = calculate_power_distribution(user_id, tool_input['activity_id'])
+            return {'activity_id': tool_input['activity_id'], 'time_in_zones': time_in_zones}
+
+        elif tool_name == "get_similar_activities":
+            days_back = tool_input.get('days_back', 90)
+            limit = tool_input.get('limit', 10)
+            similar = find_similar_activities(user_id, tool_input['activity_id'], days_back, limit)
+            return {
+                'reference_activity_id': tool_input['activity_id'],
+                'similar_activities': similar,
+                'count': len(similar) if similar else 0
+            }
+
+        else:
+            return {'error': f'Unknown tool: {tool_name}'}
+
+    except Exception as e:
+        logger.error(f"Error executing tool {tool_name}: {str(e)}")
+        return {'error': str(e)}
+
+
 def get_tool_definitions():
     """
     Returns the tool definitions for Anthropic's function calling API.
@@ -51,20 +104,6 @@ def get_tool_definitions():
             }
         },
         {
-            "name": "get_activity_basic_info",
-            "description": "Get basic information about an activity including name, type, distance, duration, average power, normalized power, and other core metrics.",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "activity_id": {
-                        "type": "integer",
-                        "description": "The ID of the activity"
-                    }
-                },
-                "required": ["activity_id"]
-            }
-        },
-        {
             "name": "get_similar_activities",
             "description": "Find activities similar to the current one for comparison. Returns up to 5 activities with similar type, duration (within 25%), and intensity (within 20%) from the past 90 days. Use sparingly - only call if comparison context is essential for the insight.",
             "input_schema": {
@@ -84,15 +123,6 @@ def get_tool_definitions():
                     }
                 },
                 "required": ["activity_id"]
-            }
-        },
-        {
-            "name": "get_user_profile",
-            "description": "Get the athlete's training profile including FTP (Functional Threshold Power), max heart rate, resting heart rate, and configured power/heart rate zones. Use this to understand the athlete's fitness level and training zones.",
-            "input_schema": {
-                "type": "object",
-                "properties": {},
-                "required": []
             }
         }
     ]

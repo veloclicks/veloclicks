@@ -1,6 +1,6 @@
 """
 Agent callback API endpoints.
-These endpoints are called by the Anthropic AI agent to fetch activity data.
+These endpoints expose features for an agent as opposed to being a direct entrypoint for users
 """
 
 import logging
@@ -14,7 +14,9 @@ import json
 
 logger = logging.getLogger(__name__)
 
-
+#
+# gets tss and calculates it if its not there
+#
 @agent_bp.route('/activity_tss', methods=['GET'])
 @jwt_required()
 def get_activity_tss():
@@ -42,8 +44,9 @@ def get_activity_tss():
             return jsonify({'error': 'Could not calculate TSS'}), 500
 
     return jsonify({'activity_id': activity_id, 'tss': tss})
-
-
+#
+# gets power curve and calculates it if its not there
+#
 @agent_bp.route('/activity_zcurve', methods=['GET'])
 @jwt_required()
 def get_activity_power_curve():
@@ -78,7 +81,9 @@ def get_activity_power_curve():
 
     return jsonify({'activity_id': activity_id, 'power_curve': power_curve})
 
-
+#
+# Gets the power distribution for an activity - assuming it has already been calculated
+#
 @agent_bp.route('/activity_zdist', methods=['GET'])
 @jwt_required()
 def get_activity_power_distribution():
@@ -113,7 +118,9 @@ def get_activity_power_distribution():
 
     return jsonify({'activity_id': activity_id, 'time_in_zones': time_in_zones})
 
-
+#
+# get basic info about the activity
+#
 @agent_bp.route('/activity', methods=['GET'])
 @jwt_required()
 def get_activity_basic_info():
@@ -144,7 +151,7 @@ def get_activity_basic_info():
         'elevation_gain': activity.total_elevation_gain
     })
 
-
+# find similar activities
 @agent_bp.route('/activity_similar', methods=['GET'])
 @jwt_required()
 def get_similar_activities():
