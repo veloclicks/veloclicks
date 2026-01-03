@@ -406,8 +406,8 @@ def get_elevation_profile_data(user_id, activity_id):
     """
     logging.info(f"get_elevation_profile_data() for user {user_id}, activity {activity_id}")
 
-    # Get streams from Strava API
-    streams_data = get_activity_streams(user_id, activity_id, ['latlng', 'altitude', 'heartrate'])
+    # Get streams from Strava API (grade_smooth provides gradient/slope data)
+    streams_data = get_activity_streams(user_id, activity_id, ['latlng', 'altitude', 'heartrate', 'watts', 'grade_smooth'])
 
     if not streams_data or 'latlng' not in streams_data or 'altitude' not in streams_data:
         logging.warning(f"get_elevation_profile_data() insufficient stream data for activity {activity_id}")
@@ -416,6 +416,8 @@ def get_elevation_profile_data(user_id, activity_id):
     latlng_data = streams_data['latlng']['data']
     altitude_data = streams_data['altitude']['data']
     heartrate_data = streams_data.get('heartrate', {}).get('data', None)
+    power_data = streams_data.get('watts', {}).get('data', None)
+    gradient_data = streams_data.get('grade_smooth', {}).get('data', None)
 
     # Calculate distances using Haversine formula
     cumulative_distance = 0
@@ -449,6 +451,14 @@ def get_elevation_profile_data(user_id, activity_id):
         # Add heart rate if available
         if heartrate_data and i < len(heartrate_data) and heartrate_data[i] is not None:
             data_point['heartrate'] = int(heartrate_data[i])
+
+        # Add power if available
+        if power_data and i < len(power_data) and power_data[i] is not None:
+            data_point['power'] = int(power_data[i])
+
+        # Add gradient if available (grade_smooth is already in percentage from Strava)
+        if gradient_data and i < len(gradient_data) and gradient_data[i] is not None:
+            data_point['gradient'] = round(gradient_data[i], 1)
 
         profile_data.append(data_point)
 

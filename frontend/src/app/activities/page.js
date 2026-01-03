@@ -14,7 +14,7 @@ const ActivitiesContent = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
-  const [selectedYears, setSelectedYears] = useState(['2024', '2025']); // Default to recent years
+  const [selectedYears, setSelectedYears] = useState(['2025', '2026']); // Default to recent years
   const [minElapsedTime, setMinElapsedTime] = useState(0);
   const [minNormalisedPower, setMinNormalisedPower] = useState(0);
   const [showFilters, setShowFilters] = useState(true);
@@ -142,8 +142,16 @@ const ActivitiesContent = () => {
     border: 'hsl(210, 10%, 30%)',
   };
 
-  // Fixed available years from 2018 to 2025
-  const availableYears = ['2018', '2019', '2020', '2021', '2022', '2023', '2024', '2025'];
+  // Dynamically generate available years from 2018 to current year
+  const availableYears = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const startYear = 2018;
+    const years = [];
+    for (let year = startYear; year <= currentYear; year++) {
+      years.push(year.toString());
+    }
+    return years;
+  }, []);
 
   // Format elapsed time
   const formatElapsedTime = (minutes) => {
@@ -456,9 +464,22 @@ const ActivitiesContent = () => {
                         return `${dateStr} ${timeStr}`;
                       })()}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm activity-name" style={{ color: colors.foreground }} title={activity.name || 'Untitled'}>
-                        <button onClick={() => window.location.href = `/activities/${activity.id}`} style={{background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', textAlign: 'left', width: '100%'}}>
-                        {activity.name || 'Untitled'}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm activity-name" title={activity.name || 'Untitled'}>
+                        <button
+                          onClick={() => window.location.href = `/activities/${activity.id}`}
+                          className="hover:opacity-80 transition-opacity"
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: colors.primary,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            width: '100%',
+                            fontWeight: '500',
+                            textDecoration: 'underline'
+                          }}
+                        >
+                          {activity.name || 'Untitled'}
                         </button>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium" style={{ color: colors.chart3 }}>

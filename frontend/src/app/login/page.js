@@ -212,7 +212,7 @@ const LoginPage = () => {
             </div>
 
             {/* Remember Me & Forgot Password */}
-            <div className="flex items-center justify-between">
+            {/* <div className="flex items-center justify-between">
               <div className="flex items-center">
                 <input
                   id="rememberMe"
@@ -221,7 +221,7 @@ const LoginPage = () => {
                   checked={formData.rememberMe}
                   onChange={handleInputChange}
                   className="h-4 w-4 rounded"
-                  style={{ 
+                  style={{
                     accentColor: colors.primary,
                     backgroundColor: colors.muted,
                     borderColor: colors.border
@@ -239,7 +239,7 @@ const LoginPage = () => {
               >
                 Forgot password?
               </button>
-            </div>
+            </div> */}
 
             {/* General Error Message */}
             {errors.general && (

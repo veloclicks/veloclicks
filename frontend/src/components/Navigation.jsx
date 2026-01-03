@@ -119,7 +119,7 @@ const Navigation = () => {
                 Visualizations
               </button>
 
-              <button
+              {/* <button
                 className="px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:opacity-80 flex items-center space-x-2"
                 style={isActive('/ai-insights') ? {
                   backgroundColor: colors.primary,
@@ -129,7 +129,7 @@ const Navigation = () => {
               >
                 <Brain className="h-4 w-4" />
                 <span>AI Insights</span>
-              </button>
+              </button> */}
 
             </nav>
           </div>

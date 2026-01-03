@@ -622,43 +622,73 @@ const ActivityDetailPage = () => {
                       />
                       
                       {/* Start point */}
-                      {routePoints.length > 0 && (
-                        <circle
-                          cx={20 + (routePoints[0].lng - Math.min(...routePoints.map(p => p.lng))) * 360 / (Math.max(...routePoints.map(p => p.lng)) - Math.min(...routePoints.map(p => p.lng)))}
-                          cy={280 - (routePoints[0].lat - Math.min(...routePoints.map(p => p.lat))) * 260 / (Math.max(...routePoints.map(p => p.lat)) - Math.min(...routePoints.map(p => p.lat)))}
-                          r="6"
-                          fill={colors.chart3}
-                          stroke="white"
-                          strokeWidth="2"
-                        />
-                      )}
-                      
+                      {routePoints.length > 0 && (() => {
+                        const minLng = Math.min(...routePoints.map(p => p.lng));
+                        const maxLng = Math.max(...routePoints.map(p => p.lng));
+                        const minLat = Math.min(...routePoints.map(p => p.lat));
+                        const maxLat = Math.max(...routePoints.map(p => p.lat));
+                        const lngRange = maxLng - minLng || 1; // Avoid division by zero
+                        const latRange = maxLat - minLat || 1; // Avoid division by zero
+                        const cx = 20 + (routePoints[0].lng - minLng) * 360 / lngRange;
+                        const cy = 280 - (routePoints[0].lat - minLat) * 260 / latRange;
+                        return (
+                          <circle
+                            cx={cx}
+                            cy={cy}
+                            r="6"
+                            fill={colors.chart3}
+                            stroke="white"
+                            strokeWidth="2"
+                          />
+                        );
+                      })()}
+
                       {/* End point */}
-                      {routePoints.length > 0 && (
-                        <circle
-                          cx={20 + (routePoints[routePoints.length - 1].lng - Math.min(...routePoints.map(p => p.lng))) * 360 / (Math.max(...routePoints.map(p => p.lng)) - Math.min(...routePoints.map(p => p.lng)))}
-                          cy={280 - (routePoints[routePoints.length - 1].lat - Math.min(...routePoints.map(p => p.lat))) * 260 / (Math.max(...routePoints.map(p => p.lat)) - Math.min(...routePoints.map(p => p.lat)))}
-                          r="6"
-                          fill={colors.accent}
-                          stroke="white"
-                          strokeWidth="2"
-                        />
-                      )}
+                      {routePoints.length > 0 && (() => {
+                        const minLng = Math.min(...routePoints.map(p => p.lng));
+                        const maxLng = Math.max(...routePoints.map(p => p.lng));
+                        const minLat = Math.min(...routePoints.map(p => p.lat));
+                        const maxLat = Math.max(...routePoints.map(p => p.lat));
+                        const lngRange = maxLng - minLng || 1; // Avoid division by zero
+                        const latRange = maxLat - minLat || 1; // Avoid division by zero
+                        const cx = 20 + (routePoints[routePoints.length - 1].lng - minLng) * 360 / lngRange;
+                        const cy = 280 - (routePoints[routePoints.length - 1].lat - minLat) * 260 / latRange;
+                        return (
+                          <circle
+                            cx={cx}
+                            cy={cy}
+                            r="6"
+                            fill={colors.accent}
+                            stroke="white"
+                            strokeWidth="2"
+                          />
+                        );
+                      })()}
                       
                       {/* Hover indicator - synchronized with elevation chart */}
-                      {hoveredIndex !== null && elevationData[hoveredIndex] && routePoints.length > 0 && (
-                        <circle
-                          cx={20 + (elevationData[hoveredIndex].lng - Math.min(...routePoints.map(p => p.lng))) * 360 / (Math.max(...routePoints.map(p => p.lng)) - Math.min(...routePoints.map(p => p.lng)))}
-                          cy={280 - (elevationData[hoveredIndex].lat - Math.min(...routePoints.map(p => p.lat))) * 260 / (Math.max(...routePoints.map(p => p.lat)) - Math.min(...routePoints.map(p => p.lat)))}
-                          r="8"
-                          fill={colors.accent}
-                          stroke="white"
-                          strokeWidth="3"
-                          opacity="0.9"
-                        >
-                          <animate attributeName="r" values="8;12;8" dur="1.5s" repeatCount="indefinite" />
-                        </circle>
-                      )}
+                      {hoveredIndex !== null && elevationData[hoveredIndex] && routePoints.length > 0 && (() => {
+                        const minLng = Math.min(...routePoints.map(p => p.lng));
+                        const maxLng = Math.max(...routePoints.map(p => p.lng));
+                        const minLat = Math.min(...routePoints.map(p => p.lat));
+                        const maxLat = Math.max(...routePoints.map(p => p.lat));
+                        const lngRange = maxLng - minLng || 1; // Avoid division by zero
+                        const latRange = maxLat - minLat || 1; // Avoid division by zero
+                        const cx = 20 + (elevationData[hoveredIndex].lng - minLng) * 360 / lngRange;
+                        const cy = 280 - (elevationData[hoveredIndex].lat - minLat) * 260 / latRange;
+                        return (
+                          <circle
+                            cx={cx}
+                            cy={cy}
+                            r="8"
+                            fill={colors.accent}
+                            stroke="white"
+                            strokeWidth="3"
+                            opacity="0.9"
+                          >
+                            <animate attributeName="r" values="8;12;8" dur="1.5s" repeatCount="indefinite" />
+                          </circle>
+                        );
+                      })()}
 
                       {/* Legend */}
                       <g>
@@ -757,41 +787,7 @@ const ActivityDetailPage = () => {
                         stroke={colors.mutedForeground}
                         label={{ value: 'Elevation (m)', angle: -90, position: 'insideLeft', style: { fill: colors.mutedForeground } }}
                       />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: colors.card,
-                          border: `1px solid ${colors.border}`,
-                          borderRadius: '8px',
-                          color: colors.foreground
-                        }}
-                        content={({ active, payload, label }) => {
-                          if (active && payload && payload.length) {
-                            const data = payload[0].payload;
-                            return (
-                              <div style={{
-                                backgroundColor: colors.card,
-                                border: `1px solid ${colors.border}`,
-                                borderRadius: '8px',
-                                padding: '8px 12px',
-                                color: colors.foreground
-                              }}>
-                                <p style={{ margin: '0 0 4px 0', fontWeight: 'bold' }}>
-                                  Distance: {label}km
-                                </p>
-                                <p style={{ margin: '2px 0', color: colors.primary }}>
-                                  Elevation: {data.elevation}m
-                                </p>
-                                {data.heartrate && (
-                                  <p style={{ margin: '2px 0', color: colors.accent }}>
-                                    Heart Rate: {data.heartrate} bpm
-                                  </p>
-                                )}
-                              </div>
-                            );
-                          }
-                          return null;
-                        }}
-                      />
+                      <Tooltip content={() => null} cursor={{ stroke: colors.accent, strokeWidth: 1 }} />
                       <Area
                         type="monotone"
                         dataKey="elevation"
@@ -803,7 +799,55 @@ const ActivityDetailPage = () => {
                     </AreaChart>
                   </ResponsiveContainer>
 
-                  <div className="mt-4 grid grid-cols-3 gap-4">
+                  {/* Hover Data Display */}
+                  <div className="mt-4 p-3 rounded-lg" style={{ backgroundColor: colors.muted, border: `1px solid ${colors.border}`, minHeight: '60px' }}>
+                    {hoveredIndex !== null && elevationData[hoveredIndex] ? (
+                      <div className="grid grid-cols-5 gap-3 text-xs">
+                        <div>
+                          <div style={{ color: colors.mutedForeground }}>Distance</div>
+                          <div className="font-semibold" style={{ color: colors.foreground }}>
+                            {elevationData[hoveredIndex].distance}km
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ color: colors.mutedForeground }}>Elevation</div>
+                          <div className="font-semibold" style={{ color: colors.primary }}>
+                            {elevationData[hoveredIndex].elevation}m
+                          </div>
+                        </div>
+                        {elevationData[hoveredIndex].gradient !== undefined && (
+                          <div>
+                            <div style={{ color: colors.mutedForeground }}>Gradient</div>
+                            <div className="font-semibold" style={{ color: '#fbbf24' }}>
+                              {elevationData[hoveredIndex].gradient}%
+                            </div>
+                          </div>
+                        )}
+                        {elevationData[hoveredIndex].power && (
+                          <div>
+                            <div style={{ color: colors.mutedForeground }}>Power</div>
+                            <div className="font-semibold" style={{ color: colors.chart3 }}>
+                              {elevationData[hoveredIndex].power}W
+                            </div>
+                          </div>
+                        )}
+                        {elevationData[hoveredIndex].heartrate && (
+                          <div>
+                            <div style={{ color: colors.mutedForeground }}>Heart Rate</div>
+                            <div className="font-semibold" style={{ color: colors.accent }}>
+                              {elevationData[hoveredIndex].heartrate} bpm
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-center" style={{ color: colors.mutedForeground, paddingTop: '8px' }}>
+                        Hover over the chart to see details
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-3 gap-4" style={{ display: 'none' }}>
                     <div className="text-center">
                       <div className="text-sm" style={{ color: colors.mutedForeground }}>Min Elevation</div>
                       <div className="text-lg font-semibold" style={{ color: colors.foreground }}>

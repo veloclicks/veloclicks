@@ -1,13 +1,14 @@
 'use client';
 import React, { useState, useMemo, useEffect } from 'react';
 import Navigation from '../../components/Navigation';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Calendar, TrendingUp, RotateCcw } from 'lucide-react';
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { Calendar, TrendingUp, RotateCcw, BarChart3, LineChart as LineChartIcon } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 const VisualizationsPage = () => {
-  const [selectedYears, setSelectedYears] = useState(['2023', '2024', '2025']);
+  const [selectedYears, setSelectedYears] = useState(['2024', '2025', '2026']);
   const [activityData, setActivityData] = useState([]);
+  const [chartType, setChartType] = useState('bar'); // 'bar' or 'line'
   const { isAuthenticated, user } = useAuth();
   
   // Dark theme colors matching your palette
@@ -25,89 +26,99 @@ const VisualizationsPage = () => {
     border: 'hsl(210, 10%, 30%)',
   };
 
-  // Demo activity data across multiple years
+  // Demo activity data across multiple years - more realistic with variations
   const demoActivityData = [
-    // 2020 data
-    { year: 2020, month: 'Jan', hours: 15.5 },
-    { year: 2020, month: 'Feb', hours: 18.2 },
-    { year: 2020, month: 'Mar', hours: 22.7 },
-    { year: 2020, month: 'Apr', hours: 28.1 },
-    { year: 2020, month: 'May', hours: 31.8 },
-    { year: 2020, month: 'Jun', hours: 35.2 },
-    { year: 2020, month: 'Jul', hours: 38.7 },
-    { year: 2020, month: 'Aug', hours: 36.4 },
-    { year: 2020, month: 'Sep', hours: 29.8 },
-    { year: 2020, month: 'Oct', hours: 24.6 },
-    { year: 2020, month: 'Nov', hours: 19.3 },
-    { year: 2020, month: 'Dec', hours: 16.1 },
-    // 2021 data
-    { year: 2021, month: 'Jan', hours: 17.2 },
-    { year: 2021, month: 'Feb', hours: 20.1 },
-    { year: 2021, month: 'Mar', hours: 25.4 },
-    { year: 2021, month: 'Apr', hours: 32.7 },
-    { year: 2021, month: 'May', hours: 35.9 },
-    { year: 2021, month: 'Jun', hours: 38.8 },
-    { year: 2021, month: 'Jul', hours: 42.1 },
-    { year: 2021, month: 'Aug', hours: 39.6 },
-    { year: 2021, month: 'Sep', hours: 33.2 },
-    { year: 2021, month: 'Oct', hours: 27.8 },
-    { year: 2021, month: 'Nov', hours: 21.5 },
-    { year: 2021, month: 'Dec', hours: 18.7 },
-    // 2022 data
-    { year: 2022, month: 'Jan', hours: 19.8 },
-    { year: 2022, month: 'Feb', hours: 23.4 },
-    { year: 2022, month: 'Mar', hours: 28.9 },
-    { year: 2022, month: 'Apr', hours: 35.2 },
-    { year: 2022, month: 'May', hours: 38.7 },
-    { year: 2022, month: 'Jun', hours: 41.3 },
-    { year: 2022, month: 'Jul', hours: 44.8 },
-    { year: 2022, month: 'Aug', hours: 42.1 },
-    { year: 2022, month: 'Sep', hours: 35.6 },
-    { year: 2022, month: 'Oct', hours: 30.2 },
-    { year: 2022, month: 'Nov', hours: 24.8 },
-    { year: 2022, month: 'Dec', hours: 21.3 },
-    // 2023 data
-    { year: 2023, month: 'Jan', hours: 22.1 },
-    { year: 2023, month: 'Feb', hours: 25.7 },
-    { year: 2023, month: 'Mar', hours: 31.2 },
-    { year: 2023, month: 'Apr', hours: 37.8 },
-    { year: 2023, month: 'May', hours: 41.5 },
-    { year: 2023, month: 'Jun', hours: 43.9 },
-    { year: 2023, month: 'Jul', hours: 47.2 },
-    { year: 2023, month: 'Aug', hours: 44.6 },
-    { year: 2023, month: 'Sep', hours: 38.1 },
-    { year: 2023, month: 'Oct', hours: 32.7 },
-    { year: 2023, month: 'Nov', hours: 27.4 },
-    { year: 2023, month: 'Dec', hours: 23.8 },
-    // 2024 data
-    { year: 2024, month: 'Jan', hours: 24.5 },
-    { year: 2024, month: 'Feb', hours: 28.3 },
-    { year: 2024, month: 'Mar', hours: 33.8 },
-    { year: 2024, month: 'Apr', hours: 40.1 },
-    { year: 2024, month: 'May', hours: 43.7 },
-    { year: 2024, month: 'Jun', hours: 46.2 },
-    { year: 2024, month: 'Jul', hours: 49.8 },
-    { year: 2024, month: 'Aug', hours: 47.1 },
-    { year: 2024, month: 'Sep', hours: 40.5 },
-    { year: 2024, month: 'Oct', hours: 35.3 },
-    { year: 2024, month: 'Nov', hours: 29.6 },
-    { year: 2024, month: 'Dec', hours: 26.2 },
-    // 2025 data (partial year)
-    { year: 2025, month: 'Jan', hours: 26.8 },
-    { year: 2025, month: 'Feb', hours: 30.1 },
-    { year: 2025, month: 'Mar', hours: 35.4 },
-    { year: 2025, month: 'Apr', hours: 42.3 },
-    { year: 2025, month: 'May', hours: 45.9 },
-    { year: 2025, month: 'Jun', hours: 48.7 },
-    { year: 2025, month: 'Jul', hours: 52.1 },
-    { year: 2025, month: 'Aug', hours: 49.4 },
-    { year: 2025, month: 'Sep', hours: 42.8 },
+    // 2020 data - moderate year with injury break in Sep
+    { year: 2020, month: 'Jan', hours: 12.3 },
+    { year: 2020, month: 'Feb', hours: 18.5 },
+    { year: 2020, month: 'Mar', hours: 24.2 },
+    { year: 2020, month: 'Apr', hours: 31.7 },
+    { year: 2020, month: 'May', hours: 38.4 },
+    { year: 2020, month: 'Jun', hours: 42.1 },
+    { year: 2020, month: 'Jul', hours: 45.8 },
+    { year: 2020, month: 'Aug', hours: 39.2 },
+    { year: 2020, month: 'Sep', hours: 6.4 }, // Injury/break
+    { year: 2020, month: 'Oct', hours: 8.7 }, // Recovery
+    { year: 2020, month: 'Nov', hours: 15.3 },
+    { year: 2020, month: 'Dec', hours: 10.2 },
+    // 2021 data - strong year with consistent training
+    { year: 2021, month: 'Jan', hours: 14.8 },
+    { year: 2021, month: 'Feb', hours: 3.2 }, // Vacation/sick
+    { year: 2021, month: 'Mar', hours: 22.6 },
+    { year: 2021, month: 'Apr', hours: 28.9 },
+    { year: 2021, month: 'May', hours: 41.3 },
+    { year: 2021, month: 'Jun', hours: 48.7 },
+    { year: 2021, month: 'Jul', hours: 52.4 },
+    { year: 2021, month: 'Aug', hours: 44.8 },
+    { year: 2021, month: 'Sep', hours: 38.5 },
+    { year: 2021, month: 'Oct', hours: 32.1 },
+    { year: 2021, month: 'Nov', hours: 26.7 },
+    { year: 2021, month: 'Dec', hours: 19.4 },
+    // 2022 data - peak year with high summer volume
+    { year: 2022, month: 'Jan', hours: 16.5 },
+    { year: 2022, month: 'Feb', hours: 21.8 },
+    { year: 2022, month: 'Mar', hours: 29.3 },
+    { year: 2022, month: 'Apr', hours: 36.7 },
+    { year: 2022, month: 'May', hours: 44.2 },
+    { year: 2022, month: 'Jun', hours: 51.8 },
+    { year: 2022, month: 'Jul', hours: 58.3 },
+    { year: 2022, month: 'Aug', hours: 54.6 },
+    { year: 2022, month: 'Sep', hours: 46.9 },
+    { year: 2022, month: 'Oct', hours: 37.4 },
+    { year: 2022, month: 'Nov', hours: 5.1 }, // Burnout/rest
+    { year: 2022, month: 'Dec', hours: 12.8 },
+    // 2023 data - rebuilding year with cautious approach
+    { year: 2023, month: 'Jan', hours: 9.6 },
+    { year: 2023, month: 'Feb', hours: 14.2 },
+    { year: 2023, month: 'Mar', hours: 19.7 },
+    { year: 2023, month: 'Apr', hours: 27.4 },
+    { year: 2023, month: 'May', hours: 33.8 },
+    { year: 2023, month: 'Jun', hours: 39.5 },
+    { year: 2023, month: 'Jul', hours: 43.2 },
+    { year: 2023, month: 'Aug', hours: 40.7 },
+    { year: 2023, month: 'Sep', hours: 35.3 },
+    { year: 2023, month: 'Oct', hours: 28.9 },
+    { year: 2023, month: 'Nov', hours: 22.4 },
+    { year: 2023, month: 'Dec', hours: 1.8 }, // Holiday travel
+    // 2024 data - strong consistent year
+    { year: 2024, month: 'Jan', hours: 18.2 },
+    { year: 2024, month: 'Feb', hours: 23.6 },
+    { year: 2024, month: 'Mar', hours: 31.4 },
+    { year: 2024, month: 'Apr', hours: 38.9 },
+    { year: 2024, month: 'May', hours: 46.3 },
+    { year: 2024, month: 'Jun', hours: 49.7 },
+    { year: 2024, month: 'Jul', hours: 55.1 },
+    { year: 2024, month: 'Aug', hours: 51.8 },
+    { year: 2024, month: 'Sep', hours: 44.2 },
+    { year: 2024, month: 'Oct', hours: 36.5 },
+    { year: 2024, month: 'Nov', hours: 28.7 },
+    { year: 2024, month: 'Dec', hours: 20.3 },
+    // 2025 data (partial year) - ambitious start
+    { year: 2025, month: 'Jan', hours: 24.8 },
+    { year: 2025, month: 'Feb', hours: 29.5 },
+    { year: 2025, month: 'Mar', hours: 37.2 },
+    { year: 2025, month: 'Apr', hours: 43.6 },
+    { year: 2025, month: 'May', hours: 50.4 },
+    { year: 2025, month: 'Jun', hours: 54.9 },
+    { year: 2025, month: 'Jul', hours: 58.7 },
+    { year: 2025, month: 'Aug', hours: 55.3 },
+    { year: 2025, month: 'Sep', hours: 48.1 },
     { year: 2025, month: 'Oct', hours: 0 }, // Future months
     { year: 2025, month: 'Nov', hours: 0 },
     { year: 2025, month: 'Dec', hours: 0 },
   ];
 
-  const availableYears = ['2020', '2021', '2022', '2023', '2024', '2025'];
+  // Dynamically generate available years from 2020 to current year
+  const availableYears = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const startYear = 2020;
+    const years = [];
+    for (let year = startYear; year <= currentYear; year++) {
+      years.push(year.toString());
+    }
+    return years;
+  }, []);
+
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   // Get the data source based on user type - simple logic
@@ -127,10 +138,12 @@ const VisualizationsPage = () => {
     });
   }, [selectedYears, dataSource]);
 
-  // Get colors for each year
-  const getYearColor = (yearIndex) => {
+  // Get colors for each year - consistent color per year regardless of selection order
+  const getYearColor = (year) => {
     const yearColors = [colors.primary, colors.chart3, colors.accent, colors.chart4, colors.chart5];
-    return yearColors[yearIndex % yearColors.length];
+    // Use the year number itself to determine color, so each year always gets the same color
+    const yearNum = parseInt(year);
+    return yearColors[yearNum % yearColors.length];
   };
 
   // Calculate totals for each year
@@ -265,27 +278,57 @@ const VisualizationsPage = () => {
 
         <div className="space-y-6">
           {/* Controls */}
-          <div className="rounded-xl shadow-sm" style={{ 
-            backgroundColor: colors.card, 
-            border: `1px solid ${colors.border}` 
+          <div className="rounded-xl shadow-sm" style={{
+            backgroundColor: colors.card,
+            border: `1px solid ${colors.border}`
           }}>
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold" style={{ color: colors.foreground }}>
                   Select Years to Compare (max 5)
                 </h3>
-                <button
-                  onClick={resetToDefault}
-                  className="flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors hover:opacity-80"
-                  style={{ 
+                <div className="flex items-center space-x-2">
+                  {/* Chart Type Toggle */}
+                  <div className="flex items-center space-x-1 px-1 py-1 rounded-lg" style={{
                     backgroundColor: colors.muted,
-                    color: colors.mutedForeground,
                     border: `1px solid ${colors.border}`
-                  }}
-                >
-                  <RotateCcw className="h-4 w-4" />
-                  <span>Reset</span>
-                </button>
+                  }}>
+                    <button
+                      onClick={() => setChartType('bar')}
+                      className="flex items-center space-x-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
+                      style={{
+                        backgroundColor: chartType === 'bar' ? colors.primary : 'transparent',
+                        color: chartType === 'bar' ? 'white' : colors.mutedForeground
+                      }}
+                    >
+                      <BarChart3 className="h-4 w-4" />
+                      <span>Bar</span>
+                    </button>
+                    <button
+                      onClick={() => setChartType('line')}
+                      className="flex items-center space-x-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
+                      style={{
+                        backgroundColor: chartType === 'line' ? colors.primary : 'transparent',
+                        color: chartType === 'line' ? 'white' : colors.mutedForeground
+                      }}
+                    >
+                      <LineChartIcon className="h-4 w-4" />
+                      <span>Line</span>
+                    </button>
+                  </div>
+                  <button
+                    onClick={resetToDefault}
+                    className="flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors hover:opacity-80"
+                    style={{
+                      backgroundColor: colors.muted,
+                      color: colors.mutedForeground,
+                      border: `1px solid ${colors.border}`
+                    }}
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    <span>Reset</span>
+                  </button>
+                </div>
               </div>
               
               <div className="flex flex-wrap gap-3">
@@ -300,12 +343,12 @@ const VisualizationsPage = () => {
                         : 'hover:opacity-80'
                     }`}
                     style={{
-                      backgroundColor: selectedYears.includes(year) 
-                        ? getYearColor(selectedYears.indexOf(year))
+                      backgroundColor: selectedYears.includes(year)
+                        ? getYearColor(year)
                         : colors.muted,
                       color: selectedYears.includes(year) ? 'white' : colors.foreground,
-                      border: `1px solid ${selectedYears.includes(year) 
-                        ? getYearColor(selectedYears.indexOf(year))
+                      border: `1px solid ${selectedYears.includes(year)
+                        ? getYearColor(year)
                         : colors.border}`
                     }}
                   >
@@ -325,17 +368,17 @@ const VisualizationsPage = () => {
           {/* Year Totals Summary */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             {yearTotals.map((yearData, index) => (
-              <div 
+              <div
                 key={yearData.year}
                 className="p-4 rounded-lg"
-                style={{ 
+                style={{
                   backgroundColor: colors.card,
-                  border: `2px solid ${getYearColor(selectedYears.indexOf(yearData.year))}`
+                  border: `2px solid ${getYearColor(yearData.year)}`
                 }}
               >
                 <div className="text-center">
-                  <div className="text-2xl font-bold mb-1" style={{ 
-                    color: getYearColor(selectedYears.indexOf(yearData.year)) 
+                  <div className="text-2xl font-bold mb-1" style={{
+                    color: getYearColor(yearData.year)
                   }}>
                     {yearData.total.toFixed(1)}h
                   </div>
@@ -369,63 +412,119 @@ const VisualizationsPage = () => {
               
               <div className="h-96">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={chartData}
-                    margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-                    barCategoryGap="10%"
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke={colors.border} />
-                    <XAxis 
-                      dataKey="month" 
-                      stroke={colors.mutedForeground}
-                      fontSize={12}
-                      fontWeight={500}
-                    />
-                    <YAxis 
-                      stroke={colors.mutedForeground}
-                      fontSize={12}
-                      fontWeight={500}
-                      label={{ 
-                        value: 'Hours', 
-                        angle: -90, 
-                        position: 'insideLeft',
-                        style: { textAnchor: 'middle', fill: colors.mutedForeground }
-                      }}
-                    />
-                    <Tooltip 
-                      contentStyle={{
-                        backgroundColor: colors.card,
-                        border: `1px solid ${colors.border}`,
-                        borderRadius: '8px',
-                        color: colors.foreground,
-                        fontWeight: 500
-                      }}
-                      formatter={(value, name) => [`${value}h`, name]}
-                      labelStyle={{ color: colors.foreground }}
-                    />
-                    <Legend 
-                      wrapperStyle={{ 
-                        paddingTop: '20px',
-                        fontSize: '14px',
-                        fontWeight: 500
-                      }}
-                    />
-                    {selectedYears.map((year, index) => (
-                      <Bar
-                        key={year}
-                        dataKey={year}
-                        fill={getYearColor(index)}
-                        name={year}
-                        radius={[2, 2, 0, 0]}
+                  {chartType === 'bar' ? (
+                    <BarChart
+                      data={chartData}
+                      margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                      barCategoryGap="10%"
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke={colors.border} />
+                      <XAxis
+                        dataKey="month"
+                        stroke={colors.mutedForeground}
+                        fontSize={12}
+                        fontWeight={500}
                       />
-                    ))}
-                  </BarChart>
+                      <YAxis
+                        stroke={colors.mutedForeground}
+                        fontSize={12}
+                        fontWeight={500}
+                        label={{
+                          value: 'Hours',
+                          angle: -90,
+                          position: 'insideLeft',
+                          style: { textAnchor: 'middle', fill: colors.mutedForeground }
+                        }}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: colors.card,
+                          border: `1px solid ${colors.border}`,
+                          borderRadius: '8px',
+                          color: colors.foreground,
+                          fontWeight: 500
+                        }}
+                        formatter={(value, name) => [`${value}h`, name]}
+                        labelStyle={{ color: colors.foreground }}
+                      />
+                      <Legend
+                        wrapperStyle={{
+                          paddingTop: '20px',
+                          fontSize: '14px',
+                          fontWeight: 500
+                        }}
+                      />
+                      {selectedYears.map((year) => (
+                        <Bar
+                          key={year}
+                          dataKey={year}
+                          fill={getYearColor(year)}
+                          name={year}
+                          radius={[2, 2, 0, 0]}
+                        />
+                      ))}
+                    </BarChart>
+                  ) : (
+                    <LineChart
+                      data={chartData}
+                      margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke={colors.border} />
+                      <XAxis
+                        dataKey="month"
+                        stroke={colors.mutedForeground}
+                        fontSize={12}
+                        fontWeight={500}
+                      />
+                      <YAxis
+                        stroke={colors.mutedForeground}
+                        fontSize={12}
+                        fontWeight={500}
+                        label={{
+                          value: 'Hours',
+                          angle: -90,
+                          position: 'insideLeft',
+                          style: { textAnchor: 'middle', fill: colors.mutedForeground }
+                        }}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: colors.card,
+                          border: `1px solid ${colors.border}`,
+                          borderRadius: '8px',
+                          color: colors.foreground,
+                          fontWeight: 500
+                        }}
+                        formatter={(value, name) => [`${value}h`, name]}
+                        labelStyle={{ color: colors.foreground }}
+                      />
+                      <Legend
+                        wrapperStyle={{
+                          paddingTop: '20px',
+                          fontSize: '14px',
+                          fontWeight: 500
+                        }}
+                      />
+                      {selectedYears.map((year) => (
+                        <Line
+                          key={year}
+                          type="monotone"
+                          dataKey={year}
+                          stroke={getYearColor(year)}
+                          strokeWidth={2}
+                          name={year}
+                          dot={{ fill: getYearColor(year), r: 4 }}
+                          activeDot={{ r: 6 }}
+                        />
+                      ))}
+                    </LineChart>
+                  )}
                 </ResponsiveContainer>
               </div>
 
               <div className="mt-4 text-center">
                 <p className="text-xs" style={{ color: colors.mutedForeground }}>
-                  Hover over bars to see exact values • Click year buttons above to modify comparison
+                  Hover over {chartType === 'bar' ? 'bars' : 'data points'} to see exact values • Click year buttons above to modify comparison
                 </p>
               </div>
             </div>
