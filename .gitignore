@@ -72,3 +72,7 @@ implementation_notes.txt
 
 # Zappa settings with secrets
 zappa/zappa_settings.json
+zappa/app/
+
+lambda_layers
+

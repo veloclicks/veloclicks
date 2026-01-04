@@ -1,7 +1,6 @@
 from flask import Flask, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from celery import Celery, Task
 from flask_cors import CORS
 import logging
 import sys
@@ -27,8 +26,9 @@ def test_broker_connection(broker_url):
 # initialise celery with a Flask instance passed in as the app variable
 # Note that the main init methos is below this one
 #
-def celery_init_app(app: Flask) -> Celery:
+def celery_init_app(app: Flask) -> "Celery":
     print('__init__.py >> celery_init_app()')
+    from celery import Celery, Task
     
     # get config that was added to the app
     celery_config = app.config.get('CELERY')
@@ -136,6 +136,9 @@ def create_app(*args, **kwargs) -> Flask:
     # Create celery instance if requested (don't request from zappa AWS as it won;t work in lambda
     #
     if not skip_celery:
+        
+        from celery import Celery, Task
+        
         app.config.from_mapping(
             CELERY=dict(
                 broker_url="redis://redis:6379/0",
