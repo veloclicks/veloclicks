@@ -21,7 +21,9 @@ boto3>=1.26.0
 # Numeric libs (must be Docker-built)
 #numpy==1.24.3
 
-# Anthropic SDK for Claude API access
+# Anthropic SDK for Claude API access (pydantic comes from Lambda layer)
 anthropic>=0.39.0
+#pydantic==1.10.13
+
 
 

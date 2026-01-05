@@ -60,6 +60,7 @@ logs/
 *.tmp
 *.bak
 *.swp
+*.zip
 *~
 .DS_Store
 
@@ -76,3 +77,4 @@ zappa/app/
 
 lambda_layers
 
+zappa/veloclicks-dev-1767618005.tar.gz
