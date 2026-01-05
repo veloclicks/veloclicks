@@ -30,6 +30,7 @@ database_url    = resolve_ssm_parameter(os.getenv('DATABASE_URL'))
 secret_key      = resolve_ssm_parameter(os.getenv('SECRET_KEY'))
 strava_client_id     = resolve_ssm_parameter(os.getenv('STRAVA_CLIENT_ID'))
 strava_client_secret = resolve_ssm_parameter(os.getenv('STRAVA_CLIENT_SECRET'))
+anthropic_api_key    = resolve_ssm_parameter(os.getenv('ANTHROPIC_API_KEY'))
 
 
 # Debug configuration for Lambda environment
@@ -42,6 +43,8 @@ try:
     print(f"Raw STRAVA_CLIENT_ID: {os.getenv('STRAVA_CLIENT_ID')}")
     print(f"Resolved STRAVA_CLIENT_ID: {strava_client_id}")
     print(f"STRAVA_CLIENT_SECRET exists: {bool(strava_client_secret)}")
+    print(f"Raw ANTHROPIC_API_KEY: {os.getenv('ANTHROPIC_API_KEY')}")
+    print(f"Resolved ANTHROPIC_API_KEY: {anthropic_api_key[:20]}..." if anthropic_api_key else "None")
     print(f"FLASK_APP: {os.getenv('FLASK_APP')}")
     print(f"SKIP_CELERY: {os.getenv('SKIP_CELERY')}")
     print(f"TEST_PARAM: {os.getenv('TEST_PARAM')}")
@@ -61,6 +64,7 @@ class Config:
     SECRET_KEY              = secret_key
     STRAVA_CLIENT_ID        = strava_client_id
     STRAVA_CLIENT_SECRET    = strava_client_secret
+    ANTHROPIC_API_KEY       = anthropic_api_key
     LOG_LEVEL               = os.getenv('LOG_LEVEL', 'INFO')
     TEST_KEY                = os.getenv('TEST_KEY')
 
@@ -68,7 +72,7 @@ class Config:
     RESULT_BACKEND  = os.getenv('RESULT_BACKEND')
     DEMO_USERNAME   = os.getenv('DEMO_USERNAME', 'demo@veloclicks.com')
 
-    # Celery configuration - default is false, returns a boolean by comparing strings 
+    # Celery configuration - default is false, returns a boolean by comparing strings
     SKIP_CELERY     = os.getenv('SKIP_CELERY', 'false').lower() == 'true'
     
     # Debug configuration for Lambda environment

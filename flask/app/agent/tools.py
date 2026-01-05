@@ -86,11 +86,14 @@ def _get_llm_client():
     Raises:
         ValueError: If required API keys are not set or provider is unsupported
     """
+    from flask import current_app
+
     provider = os.getenv('LLM_PROVIDER', 'anthropic').lower()
     model_name = os.getenv('LLM_MODEL', 'claude-sonnet-4-20250514')
 
     if provider == 'anthropic':
-        api_key = os.getenv('ANTHROPIC_API_KEY')
+        # Try to get from Flask config first (which resolves SSM), fall back to env var
+        api_key = current_app.config.get('ANTHROPIC_API_KEY') or os.getenv('ANTHROPIC_API_KEY')
         if not api_key:
             logger.error("ANTHROPIC_API_KEY not set in environment")
             raise ValueError("AI service not configured - ANTHROPIC_API_KEY required")
