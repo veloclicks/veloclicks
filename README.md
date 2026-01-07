@@ -14,19 +14,25 @@ Linked In : [https://www.linkedin.com/in/patrick-lowry-london]
 
 ## Overview
 
-Veloclicks is a cycling analytics platform that integrates with Strava to provide athletes with performance insights and data visualizations. It's built using modern full-stack technologies and containerized for easy deployment.
+Veloclicks is a cycling analytics platform that integrates with Strava to provide cyclists with a one-stop shop for activity data, visualizations and AI insights. It's built using modern full-stack technologies and containerized for easy deployment.
+
+version: 2.0 7 Jan 2026
 
 ## Key Features
 
 **Functionality**
 - Strava integration for activity and data-stream loading
+- Anthropic integration for AI-Insights (premium only)
 - Full, tabularised activity inventory, filterable, sortable and searchable across key metrics
 - Visualisation/comparison of activity stats across multiple years
 - Route plotting (with or without background map)
-- Elevation profile for each activity with heart rate, distance and altitude overlay
+- Elevation profile for each activity with heart rate, power, distance and altitude overlay
+- Power curve and power zone distribution
+- Suffer score estimation
 - Secure registration and login
 - Automated synchronisation of last 30days activities
-- Automated upload of previous years' activities (occurs in the background following registration)
+- Bulk upload of previous years' activities
+- Administration CLI
 
 
 **Modern UI/UX**
@@ -105,10 +111,9 @@ Multi-container setup via Docker Compose with:
 
 ### Planned Features
 - Activity comparison tools
-- Training load analytics
 - Export functionality
 - Training plan
-- LLM integration to search activity history by voice or text
+- Route and Activity visualisation
 
 ## Test Automation
 Currently adding test coverage for:
