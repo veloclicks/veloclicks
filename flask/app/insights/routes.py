@@ -27,8 +27,8 @@ def _get_user_id_from_token():
         return None
 
 
-@insights_bp.route("/activity/<int:id>", methods=["GET"])
-def activity_insights(id):
+@insights_bp.route("/activity/<int:id>/ai-insights", methods=["GET"])
+def activity_ai_insights(id):
     """
     Generate AI-powered insights for an activity from a training perspective (user-facing endpoint, premium only).
 
@@ -40,7 +40,7 @@ def activity_insights(id):
     if detail_level not in ['simple', 'detailed']:
         return jsonify({"error": "detail_level must be 'simple' or 'detailed'"}), 400
 
-    logging.info(f"/insights/activity/{id}?detail_level={detail_level}")
+    logging.info(f"/insights/activity/{id}/ai-insights?detail_level={detail_level}")
 
     user_id = _get_user_id_from_token()
     if not user_id:

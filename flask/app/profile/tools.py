@@ -38,6 +38,7 @@ def get_profile(user_id: int) -> Optional[Dict[str, Any]]:
         'ftp': user.ftp,
         'max_heart_rate': user.max_heart_rate,
         'resting_heart_rate': user.resting_heart_rate,
+        'membership_type': user.membership_type.value if user.membership_type else None,
         'strava_access_token': user.strava_access_token,
         'strava_refresh_token': user.strava_refresh_token,
         'token_expiry_epoch': user.token_expiry_epoch,

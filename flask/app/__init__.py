@@ -108,6 +108,10 @@ def create_app(*args, **kwargs) -> Flask:
     logging.getLogger('werkzeug').setLevel(logging.WARNING)
     logging.getLogger('botocore').setLevel(logging.WARNING)
     logging.getLogger('boto3').setLevel(logging.WARNING)
+    logging.getLogger('anthropic._base_client').setLevel(logging.WARNING)
+    logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
+    logging.getLogger('httpcore.http11').setLevel(logging.WARNING)
+    logging.getLogger('httpcore.connection').setLevel(logging.WARNING)
 
 
     # Now we can access app.config for skip_celery

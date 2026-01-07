@@ -57,6 +57,8 @@ const ProfilePage = () => {
 
         if (response.ok) {
           const data = await response.json();
+          console.log('Profile data received:', data);
+          console.log('Membership type:', data.membership_type);
           setProfileData(data);
         } else {
           setError('Failed to load profile');
@@ -420,6 +422,39 @@ const ProfilePage = () => {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Membership */}
+          <div className="rounded-lg p-6" style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}` }}>
+            <div className="flex items-center space-x-2 mb-3">
+              <Shield className="h-5 w-5" style={{ color: colors.accent }} />
+              <h3 className="text-lg font-semibold" style={{ color: colors.foreground }}>
+                Membership
+              </h3>
+            </div>
+
+            <div className="flex items-center space-x-3">
+              <label className="text-sm font-medium min-w-[100px]" style={{ color: colors.foreground }}>
+                Current Plan
+              </label>
+              <span
+                className="px-3 py-1 rounded-full text-sm font-medium"
+                style={{
+                  backgroundColor: profileData.membership_type === 'PREMIUM_TIER' ? colors.accent : colors.muted,
+                  color: profileData.membership_type === 'PREMIUM_TIER' ? 'white' : colors.mutedForeground
+                }}
+              >
+                {profileData.membership_type === 'PREMIUM_TIER' ? 'Premium' : 'Free'}
+              </span>
+            </div>
+
+            {profileData.membership_type !== 'PREMIUM_TIER' && (
+              <div className="mt-4 p-3 rounded-lg" style={{ backgroundColor: colors.muted, border: `1px solid ${colors.border}` }}>
+                <p className="text-xs" style={{ color: colors.mutedForeground }}>
+                  Upgrade to Premium to unlock AI-powered training insights, advanced analytics, and more features.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Training Metrics */}

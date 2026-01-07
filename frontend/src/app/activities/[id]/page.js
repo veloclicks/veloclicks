@@ -7,6 +7,7 @@ import { ArrowLeft, MapPin, Clock, Zap, TrendingUp, Heart, Thermometer, Eye, Eye
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../../../contexts/AuthContext';
 import { getDemoActivityDetails } from '../../../data/demoActivityDetails';
+import AIInsightsSection from '../../../components/AIInsightsSection';
 
 // Dynamic import for Leaflet to avoid SSR issues
 const MapContainer = dynamic(() => import('react-leaflet').then(mod => mod.MapContainer), {
@@ -1066,6 +1067,13 @@ const ActivityDetailPage = () => {
                 </div>
               </div>
             )}
+
+            {/* AI Insights Section */}
+            <AIInsightsSection
+              activityId={activityId}
+              isPremiumUser={user?.membership_type === 'PREMIUM_TIER'}
+              colors={colors}
+            />
 
           </div>
         </div>
