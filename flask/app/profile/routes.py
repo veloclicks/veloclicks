@@ -1,17 +1,11 @@
-from flask import Blueprint
-from flask import current_app
-
-from flask import request, jsonify
+from flask import request, jsonify, current_app
 import jwt
 
+from app.profile import profile_bp
 from app.profile.tools import get_profile, update_profile
 
 
-api_bp = Blueprint('api', __name__, url_prefix='/api')
-
-
-# User profile endpoint - supports both GET and PUT
-@api_bp.route('/profile', methods=['GET', 'PUT'])
+@profile_bp.route('/profile', methods=['GET', 'PUT'])
 def profile():
     auth_header = request.headers.get('Authorization')
 
@@ -27,14 +21,12 @@ def profile():
             profile_data = get_profile(user_id)
             if not profile_data:
                 return jsonify({'message': 'User not found'}), 404
-
             print(f"/profile Returning profile data: {profile_data}")
             return jsonify(profile_data), 200
 
         elif request.method == 'PUT':
             data = request.get_json()
             result = update_profile(user_id, data)
-
             if result['success']:
                 return jsonify({'message': 'Profile updated successfully'}), 200
             else:
