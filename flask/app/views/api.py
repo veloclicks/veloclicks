@@ -4,77 +4,10 @@ from flask import current_app
 from flask import request, jsonify
 import jwt
 
-from app.models import db, User
 from app.profile.tools import get_profile, update_profile
-
-import datetime
 
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
-
-
-# Registration endpoint
-@api_bp.route('/register', methods=['POST'])
-def register():
-    print('/register api called')
-    data = request.get_json()
-    print(f"/register for user: {data['username']}, {data['email']}")
-
-    # Debug log the specific fields we're looking for
-    print(f"firstname field: '{data.get('firstname')}' (type: {type(data.get('firstname'))})")
-    print(f"lastname field: '{data.get('lastname')}' (type: {type(data.get('lastname'))})")
-    
-    # Check if user already exists
-    if User.query.filter_by(username=data['username']).first():
-        return jsonify({'message': 'Username already exists'}), 400
-    
-    if User.query.filter_by(email=data['email']).first():
-        return jsonify({'message': 'Email already in use'}), 400
-    
-    # Create new user
-    user = User(
-        username=data['username'],
-        email=data['email'],
-        firstname=data['firstname'],
-        lastname=data['lastname']
-    )
-    user.set_password(data['password'])
-
-    # Debug log the user object before saving
-    print(f"Created user object - firstname: '{user.firstname}', lastname: '{user.lastname}'")
-
-    db.session.add(user)
-    db.session.commit()
-
-    # Debug log after saving
-    print(f"User saved to database with ID: {user.id}")
-    print(f"Saved user - firstname: '{user.firstname}', lastname: '{user.lastname}'")
-    
-    return jsonify({'message': 'User created successfully'}), 201
-
-
-
-# Login endpoint
-@api_bp.route('/login', methods=['POST'])
-def login():
-    
-    data = request.get_json()
-    print('/login for user \n', data['username'])
-    
-    # Find user by username
-    user = User.query.filter_by(username=data['username']).first()
-    
-    if not user or not user.check_password(data['password']):
-        return jsonify({'message': 'Invalid username or password'}), 401
-    
-    # Generate JWT token
-    token = jwt.encode({
-        'user_id': user.id,
-        'email': user.email,
-        'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)
-    }, current_app.config['SECRET_KEY'], algorithm='HS256')
-    
-    return jsonify({'token': token}), 200
 
 
 # User profile endpoint - supports both GET and PUT

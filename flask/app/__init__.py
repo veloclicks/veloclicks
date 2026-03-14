@@ -161,9 +161,12 @@ def create_app(*args, **kwargs) -> Flask:
     # register our blueprints - this should be after db init
     from app.views.main import main_bp
     app.register_blueprint(main_bp, url_prefix='/')
-    
+
     from app.views.api import api_bp
     app.register_blueprint(api_bp)
+
+    from app.auth import auth_bp
+    app.register_blueprint(auth_bp)
     
     from app.strava import strava_bp
     app.register_blueprint(strava_bp)
