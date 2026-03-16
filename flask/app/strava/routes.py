@@ -525,7 +525,7 @@ def calculate_activity_power_metrics_endpoint(id):
         return jsonify({'error': 'Activity not found'}), 404
 
     # Import the calculation functions
-    from app.strava.activity_utils import calculate_power_metrics
+    from app.analytics.activity_derivations import calculate_power_metrics
 
     # Calculate power metrics
     try:
@@ -581,7 +581,7 @@ def calculate_activity_tss_endpoint(id):
         return jsonify({'error': 'Activity not found'}), 404
 
     # Import the calculation function
-    from app.strava.activity_utils import calculate_tss
+    from app.analytics.activity_derivations import calculate_tss
 
     # Calculate TSS
     try:

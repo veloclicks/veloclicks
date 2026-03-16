@@ -7,7 +7,7 @@ import logging
 from flask import jsonify, request
 from app.agent import agent_bp
 from app.models.strava import Activity
-from app.strava.activity_utils import calculate_tss, calculate_power_curve, calculate_power_distribution, find_similar_activities
+from app.analytics.activity_derivations import calculate_tss, calculate_power_curve, calculate_power_distribution, find_similar_activities
 from app.profile.tools import get_profile
 from flask_jwt_extended import jwt_required, get_jwt_identity
 import json

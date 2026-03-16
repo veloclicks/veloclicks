@@ -8,7 +8,7 @@ import logging
 from typing import Dict, Any, Optional
 
 from app.models import db, User
-from app.training.zone_utils import populate_zones, get_user_zones
+from app.profile.training_zones import populate_zones, get_user_zones
 from app.models.training_zone import ZoneType
 
 logger = logging.getLogger(__name__)

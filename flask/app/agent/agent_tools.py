@@ -4,7 +4,7 @@ These define what functions the AI agent can call to get activity data.
 """
 
 import logging
-from app.strava.activity_utils import calculate_tss, calculate_power_curve, calculate_power_distribution, find_similar_activities, get_key_power_curve_durations
+from app.analytics.activity_derivations import calculate_tss, calculate_power_curve, calculate_power_distribution, find_similar_activities, get_key_power_curve_durations
 
 logger = logging.getLogger(__name__)
 

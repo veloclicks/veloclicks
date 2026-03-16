@@ -30,7 +30,7 @@ from sqlalchemy import extract
 
 from app.models import db
 from app.models.strava import Activity
-from app.strava.activity_utils import calculate_tss, calculate_power_metrics
+from app.analytics.activity_derivations import calculate_tss, calculate_power_metrics
 from app.profile.tools import get_profile
 from app.insights.tools import generate_activity_insights
 
