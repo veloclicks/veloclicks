@@ -250,14 +250,19 @@ def calculate_power_curve(user_id: int, activity_id: int) -> Optional[Dict[int, 
 
         activity_duration = time_data[-1] if time_data else len(watts_data)
         durations = _generate_power_curve_durations(activity_duration)
+        
+        logger.info(f"Calculating power curve for activity {activity_id} with {len(durations)} durations.....")
 
         power_curve = {}
+        # Prefix sum approach: cumsum[i+d] - cumsum[i] == sum(watts[i:i+d]),
+        # giving the same rolling average as np.convolve but in O(n) per duration
+        # rather than O(n*m), which avoids timeouts on long activities.
+        cumsum = np.cumsum(np.insert(watts_array, 0, 0))
+
         for duration in durations:
             if duration > len(watts_array):
                 continue
-            window = np.ones(duration)
-            rolling_sum = np.convolve(watts_array, window, mode='valid')
-            rolling_avg = rolling_sum / duration
+            rolling_avg = (cumsum[duration:] - cumsum[:-duration]) / duration
             max_power = float(np.max(rolling_avg))
             power_curve[duration] = round(max_power, 2)
 
