@@ -4,7 +4,9 @@ These define what functions the AI agent can call to get activity data.
 """
 
 import logging
-from app.analytics.activity_derivations import calculate_tss, calculate_power_curve, calculate_power_distribution, find_similar_activities, get_key_power_curve_durations
+from app.analytics.activity_tss import calculate_tss
+from app.analytics.activity_power import calculate_power_curve, calculate_power_distribution, get_key_power_curve_durations
+from app.analytics.activity_similarities import find_similar_activities
 
 logger = logging.getLogger(__name__)
 

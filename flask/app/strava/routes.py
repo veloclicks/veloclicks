@@ -384,7 +384,8 @@ def activity_streams(id):
     stream_types = request.args.get('types', 'latlng').split(',')
 
     # Get streams from Strava API
-    streams_data = strava_utils.get_activity_streams(user_id, id, stream_types)
+    from app.strava.streams import get_activity_streams
+    streams_data = get_activity_streams(user_id, id, stream_types)
 
     if streams_data is None:
         return jsonify({'error': 'Failed to retrieve activity streams or no stream data available'}), 404
@@ -525,7 +526,7 @@ def calculate_activity_power_metrics_endpoint(id):
         return jsonify({'error': 'Activity not found'}), 404
 
     # Import the calculation functions
-    from app.analytics.activity_derivations import calculate_power_metrics
+    from app.analytics.activity_power import calculate_power_metrics
 
     # Calculate power metrics
     try:
@@ -581,7 +582,7 @@ def calculate_activity_tss_endpoint(id):
         return jsonify({'error': 'Activity not found'}), 404
 
     # Import the calculation function
-    from app.analytics.activity_derivations import calculate_tss
+    from app.analytics.activity_tss import calculate_tss
 
     # Calculate TSS
     try:

@@ -16,4 +16,6 @@ boto3>=1.26.0
 numpy==1.24.3
 # Anthropic SDK for Claude API access
 anthropic>=0.39.0
+# Used in report generation
+pandas==2.0.3
 

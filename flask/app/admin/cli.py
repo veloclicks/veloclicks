@@ -19,6 +19,12 @@ Examples:
 
     # Calculate only power metrics for a month
     docker compose exec app flask admin calculate-power --user-id 1 --year 2024 --month 11
+
+    # Generate activity report
+    docker compose exec flask flask admin activity-report --user-id 1 --activity-id 12345678
+
+    # Analyse interval session structure
+    docker compose exec flask flask admin session-structure --user-id 1 --activity-id 12345678
 """
 
 import click
@@ -30,7 +36,9 @@ from sqlalchemy import extract
 
 from app.models import db
 from app.models.strava import Activity
-from app.analytics.activity_derivations import calculate_tss, calculate_power_metrics
+from app.analytics.activity_tss import calculate_tss
+from app.analytics.activity_power import calculate_power_metrics
+from app.analytics.activity_report import generate_activity_report_json, analyse_session_structure
 from app.profile.tools import get_profile
 from app.insights.tools import generate_activity_insights
 
@@ -50,6 +58,8 @@ def admin():
       calculate-power      Calculate only power metrics (curve + zones)
       calculate-tss        Calculate only TSS for activities
       activity-insights    Generate AI-powered insights for an activity
+      activity-report      Generate a JSON activity report with interval data
+      session-structure    Analyse whether an activity is a structured interval session
 
     Use 'flask admin COMMAND --help' for detailed help on each command.
     """
@@ -506,3 +516,55 @@ def activity_insights(user_id, activity_id, detail_level):
         click.echo("=" * 80)
     else:
         click.echo(f"Error: {result['error']}", err=True)
+
+
+# --------------------------------------------------------------------------------------
+#
+#                                  ACTIVITY REPORT
+#
+# --------------------------------------------------------------------------------------
+@admin.command('activity-report')
+@click.option('--user-id', required=True, type=int, help='User ID')
+@click.option('--activity-id', required=True, type=int, help='Activity ID')
+@click.option('--pretty/--no-pretty', default=True, help='Pretty-print JSON output (default: pretty)')
+@click.option('--output-dir', default=None, help='Directory to write <activity_id>.json to')
+@with_appcontext
+def activity_report(user_id, activity_id, pretty, output_dir):
+    """
+    Generate a JSON activity report with interval and summary data.
+    """
+    click.echo(f"Generating activity report for user {user_id}, activity {activity_id}...")
+
+    result = generate_activity_report_json(user_id, activity_id, pretty=pretty, output_dir=output_dir)
+
+    if not result:
+        click.echo(f"Error: Failed to generate report for activity {activity_id}", err=True)
+        return
+
+    click.echo(result)
+
+
+# --------------------------------------------------------------------------------------
+#
+#                              SESSION STRUCTURE ANALYSIS
+#
+# --------------------------------------------------------------------------------------
+@admin.command('session-structure')
+@click.option('--user-id', required=True, type=int, help='User ID')
+@click.option('--activity-id', required=True, type=int, help='Activity ID')
+@click.option('--pretty/--no-pretty', default=True, help='Pretty-print JSON output (default: pretty)')
+@click.option('--output-dir', default=None, help='Directory to write <activity_id>.json to')
+@with_appcontext
+def session_structure(user_id, activity_id, pretty, output_dir):
+    """
+    Analyse whether an activity is a structured interval session and characterise its structure.
+    """
+    click.echo(f"Analysing session structure for user {user_id}, activity {activity_id}...")
+
+    result = analyse_session_structure(user_id, activity_id, pretty=pretty, output_dir=output_dir)
+
+    if not result:
+        click.echo(f"Error: Failed to analyse session structure for activity {activity_id}", err=True)
+        return
+
+    click.echo(result)
