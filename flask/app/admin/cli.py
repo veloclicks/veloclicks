@@ -20,11 +20,9 @@ Examples:
     # Calculate only power metrics for a month
     docker compose exec app flask admin calculate-power --user-id 1 --year 2024 --month 11
 
-    # Generate activity report
-    docker compose exec flask flask admin activity-report --user-id 1 --activity-id 12345678
-
-    # Analyse interval session structure
-    docker compose exec flask flask admin session-structure --user-id 1 --activity-id 12345678
+    # Analyse an activity (structure: classify + assess; full: structure + AI coaching)
+    docker compose exec flask flask admin analyse-activity --user-id 1 --activity-id 12345678
+    docker compose exec flask flask admin analyse-activity --user-id 1 --activity-id 12345678 --mode full
 """
 
 import click
@@ -36,11 +34,10 @@ from sqlalchemy import extract
 
 from app.models import db
 from app.models.strava import Activity
-from app.analytics.activity_tss import calculate_tss
-from app.analytics.activity_power import calculate_power_metrics
-from app.analytics.activity_report import generate_activity_report_json, analyse_session_structure
-from app.profile.tools import get_profile
-from app.insights.tools import generate_activity_insights
+from app.analytics import activity_tss, activity_power, activity_report as activity_report_module
+from app.analytics import activity_analyser
+from app.profile import tools as profile_tools
+from app.ai_coach import coach as ai_coach
 
 logger = logging.getLogger(__name__)
 
@@ -57,19 +54,46 @@ def admin():
       calculate-metrics    Calculate all metrics (power + TSS) for activities
       calculate-power      Calculate only power metrics (curve + zones)
       calculate-tss        Calculate only TSS for activities
-      activity-insights    Generate AI-powered insights for an activity
-      activity-report      Generate a JSON activity report with interval data
-      session-structure    Analyse whether an activity is a structured interval session
+      analyse-activity     Classify and assess an activity (mode=structure|full)
+      activity-coach-insights    Generate AI coaching feedback for an activity
 
     Use 'flask admin COMMAND --help' for detailed help on each command.
     """
     pass
 
 
+# --------------------------------------------------------------------------
+# helper: get activities for a period of time
+# --------------------------------------------------------------------------
+def _get_activities_by_period(user_id: int, year: int, month: int = None):
+    """
+    Get activities for a user by year and optionally month.
+
+    Args:
+        user_id: User ID
+        year: Year (e.g., 2024)
+        month: Optional month (1-12)
+
+    Returns:
+        List of Activity objects
+    """
+    query = Activity.query.filter_by(user_id=user_id)
+
+    # Filter by year
+    query = query.filter(extract('year', Activity.start_date_local) == year)
+
+    # Filter by month if provided
+    if month:
+        query = query.filter(extract('month', Activity.start_date_local) == month)
+
+    # Order by date ascending
+    activities = query.order_by(Activity.start_date_local.asc()).all()
+
+    return activities
+
+
 # --------------------------------------------------------------------------------------
-# 
-#                                  USER INFO
-#
+#   USER INFO
 # --------------------------------------------------------------------------------------
 @admin.command('user-info')
 @click.option('--username', required=True, help='Username (email) to look up')
@@ -88,7 +112,7 @@ def user_info(username):
         return
 
     # Get profile data using reusable tool
-    profile = get_profile(user.id)
+    profile = profile_tools.get_profile(user.id)
 
     if not profile:
         click.echo(f"Error retrieving profile for user {user.id}", err=True)
@@ -113,6 +137,9 @@ def user_info(username):
     click.echo("=" * 80)
 
 
+# --------------------------------------------------------------------------
+# list activities
+# --------------------------------------------------------------------------
 @admin.command('list-activities')
 @click.option('--user-id', required=True, type=int, help='User ID')
 @click.option('--year', required=True, type=int, help='Year (2018 or later)')
@@ -141,7 +168,7 @@ def list_activities(user_id, year, month):
     click.echo("=" * 140)
 
     # Get activities
-    activities = get_activities_by_period(user_id, year, month)
+    activities = _get_activities_by_period(user_id, year, month)
 
     if not activities:
         click.echo(f"No activities found for user {user_id} in {period_str}")
@@ -198,42 +225,7 @@ def list_activities(user_id, year, month):
 
 
 # --------------------------------------------------------------------------------------
-#
-#                         GET ACTVITIES IN BATCHES
-#
-# --------------------------------------------------------------------------------------
-def get_activities_by_period(user_id: int, year: int, month: int = None):
-    """
-    Get activities for a user by year and optionally month.
-
-    Args:
-        user_id: User ID
-        year: Year (e.g., 2024)
-        month: Optional month (1-12)
-
-    Returns:
-        List of Activity objects
-    """
-    query = Activity.query.filter_by(user_id=user_id)
-
-    # Filter by year
-    query = query.filter(extract('year', Activity.start_date_local) == year)
-
-    # Filter by month if provided
-    if month:
-        query = query.filter(extract('month', Activity.start_date_local) == month)
-
-    # Order by date ascending
-    activities = query.order_by(Activity.start_date_local.asc()).all()
-
-    return activities
-
-
-
-# --------------------------------------------------------------------------------------
-# 
 #                          CALCULATE POWER AND TSS METRICS IN BATCH
-#
 # --------------------------------------------------------------------------------------
 @admin.command('calculate-metrics')
 @click.option('--user-id', required=True, type=int, help='User ID')
@@ -256,7 +248,7 @@ def calculate_metrics(user_id, year, month, skip_existing):
     click.echo("-" * 80)
 
     # Get activities
-    activities = get_activities_by_period(user_id, year, month)
+    activities = _get_activities_by_period(user_id, year, month)
 
     if not activities:
         click.echo(f"No activities found for user {user_id} in {period_str}")
@@ -286,7 +278,7 @@ def calculate_metrics(user_id, year, month, skip_existing):
             power_skipped += 1
         else:
             try:
-                result = calculate_power_metrics(user_id, activity.id)
+                result = activity_power.calculate_power_metrics(user_id, activity.id)
                 if result['power_curve'] or result['time_in_zones']:
                     click.echo(f"  [Power] ✓ Calculated")
                     if result['power_curve']:
@@ -308,7 +300,7 @@ def calculate_metrics(user_id, year, month, skip_existing):
             tss_skipped += 1
         else:
             try:
-                tss = calculate_tss(user_id, activity.id)
+                tss = activity_tss.calculate_tss(user_id, activity.id)
                 if tss is not None:
                     if tss > 0:
                         click.echo(f"  [TSS] ✓ Calculated: {tss}")
@@ -343,9 +335,7 @@ def calculate_metrics(user_id, year, month, skip_existing):
 
 
 # --------------------------------------------------------------------------------------
-# 
-#                                     POWER
-#
+#  POWER
 # --------------------------------------------------------------------------------------
 @admin.command('calculate-power')
 @click.option('--user-id', required=True, type=int, help='User ID')
@@ -361,7 +351,7 @@ def calculate_power(user_id, year, month, skip_existing):
     click.echo(f"Starting power metrics calculation for user {user_id}, period: {period_str}")
     click.echo("-" * 80)
 
-    activities = get_activities_by_period(user_id, year, month)
+    activities = _get_activities_by_period(user_id, year, month)
 
     if not activities:
         click.echo(f"No activities found for user {user_id} in {period_str}")
@@ -385,7 +375,7 @@ def calculate_power(user_id, year, month, skip_existing):
             continue
 
         try:
-            result = calculate_power_metrics(user_id, activity.id)
+            result = activity_power.calculate_power_metrics(user_id, activity.id)
             if result['power_curve'] or result['time_in_zones']:
                 click.echo(f"  ✓ Success")
                 if result['power_curve']:
@@ -428,7 +418,7 @@ def calculate_tss_command(user_id, year, month, skip_existing):
     click.echo(f"Starting TSS calculation for user {user_id}, period: {period_str}")
     click.echo("-" * 80)
 
-    activities = get_activities_by_period(user_id, year, month)
+    activities = _get_activities_by_period(user_id, year, month)
 
     if not activities:
         click.echo(f"No activities found for user {user_id} in {period_str}")
@@ -452,7 +442,7 @@ def calculate_tss_command(user_id, year, month, skip_existing):
             continue
 
         try:
-            tss = calculate_tss(user_id, activity.id)
+            tss = activity_tss.calculate_tss(user_id, activity.id)
             if tss is not None:
                 if tss > 0:
                     click.echo(f"  ✓ Success: TSS={tss}")
@@ -481,7 +471,7 @@ def calculate_tss_command(user_id, year, month, skip_existing):
 #                                  AI INSIGHTS
 #
 # --------------------------------------------------------------------------------------
-@admin.command('activity-insights')
+@admin.command('activity-coach-insights')
 @click.option('--user-id', required=True, type=int, help='User ID')
 @click.option('--activity-id', required=True, type=int, help='Activity ID')
 @click.option('--detail-level', type=click.Choice(['simple', 'detailed']), default='simple', help='Level of detail: simple (quick, default) or detailed (comprehensive)')
@@ -494,23 +484,20 @@ def activity_insights(user_id, activity_id, detail_level):
     click.echo(f"ACTIVITY INSIGHTS - User: {user_id}, Activity: {activity_id}, Detail: {detail_level}")
     click.echo("=" * 80)
 
-    # Fetch activity
-    activity = Activity.query.filter_by(id=activity_id, user_id=user_id).first()
-    if not activity:
-        click.echo(f"Error: Activity {activity_id} not found for user {user_id}", err=True)
+    # Build LLM payload then generate coaching prose
+    analysis = activity_analyser.analyse_activity(user_id, activity_id, mode='llm')
+    if not analysis['success']:
+        click.echo(f"Error: {analysis['error']}", err=True)
         return
 
-    # Generate insights (CLI runs with admin override)
-    print(f"--------> activity_insights generating insights for: {activity_id} with detail_level={detail_level}")
-    result = generate_activity_insights(activity, is_admin=True, detail_level=detail_level)
+    result = ai_coach.generate_coaching(analysis['llm_payload'], detail_level=detail_level)
 
     if result['success']:
-        click.echo("\n" + result['insights'])
+        click.echo("\n" + result['coaching'])
         click.echo("\n" + "=" * 80)
         if 'token_usage' in result:
             usage = result['token_usage']
             click.echo(f"Token Usage: {usage['total_tokens']:,} total ({usage['input_tokens']:,} in, {usage['output_tokens']:,} out)")
-            # Rough cost estimate (as of 2024 pricing)
             cost = (usage['input_tokens'] * 0.003 / 1000) + (usage['output_tokens'] * 0.015 / 1000)
             click.echo(f"Estimated Cost: ${cost:.4f}")
         click.echo("=" * 80)
@@ -520,51 +507,64 @@ def activity_insights(user_id, activity_id, detail_level):
 
 # --------------------------------------------------------------------------------------
 #
-#                                  ACTIVITY REPORT
+#                              ANALYSE ACTIVITY
 #
 # --------------------------------------------------------------------------------------
-@admin.command('activity-report')
+@admin.command('analyse-activity')
 @click.option('--user-id', required=True, type=int, help='User ID')
-@click.option('--activity-id', required=True, type=int, help='Activity ID')
+@click.argument('activity_id', nargs=-1, type=int, required=True)
+@click.option('--mode', type=click.Choice(['structure', 'full', 'llm']), default='structure',
+              help='structure: classify only (default); full: classify + extract metrics; llm: full + token-efficient LLM payload')
 @click.option('--pretty/--no-pretty', default=True, help='Pretty-print JSON output (default: pretty)')
-@click.option('--output-dir', default=None, help='Directory to write <activity_id>.json to')
+@click.option('--output-dir', default=None, help='Directory to write output files to')
 @with_appcontext
-def activity_report(user_id, activity_id, pretty, output_dir):
+def analyse_activity(user_id, activity_id, mode, pretty, output_dir):
     """
-    Generate a JSON activity report with interval and summary data.
+    Analyse one or more activities.
+
+    mode=structure (default): classify workout type, persist to DB.
+    mode=full: classify + extract metrics at appropriate frequency, persist to DB.
     """
-    click.echo(f"Generating activity report for user {user_id}, activity {activity_id}...")
+    import os
+    indent = 2 if pretty else None
 
-    result = generate_activity_report_json(user_id, activity_id, pretty=pretty, output_dir=output_dir)
+    for act_id in activity_id:
+        click.echo(f"\nAnalysing activity {act_id} (mode={mode})...")
 
-    if not result:
-        click.echo(f"Error: Failed to generate report for activity {activity_id}", err=True)
-        return
+        # analyse the activity
+        result = activity_analyser.analyse_activity(user_id, act_id, mode=mode)
 
-    click.echo(result)
+        if not result['success']:
+            click.echo(f"  Error: {result['error']}", err=True)
+            continue
+        
+        # output to console
+        if mode == 'llm':
+            click.echo(json.dumps(result['llm_payload'], indent=indent))
+        else:
+            click.echo(json.dumps(result['console_summary'], indent=indent))
+            if mode == 'full' and result.get('metrics'):
+                click.echo(json.dumps(result['metrics'], indent=indent))
 
+        # output to file if asked
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+            identification = result['identification']
+            date_prefix    = identification.get('activity_date', '000000').replace('-', '')[2:]
 
-# --------------------------------------------------------------------------------------
-#
-#                              SESSION STRUCTURE ANALYSIS
-#
-# --------------------------------------------------------------------------------------
-@admin.command('session-structure')
-@click.option('--user-id', required=True, type=int, help='User ID')
-@click.option('--activity-id', required=True, type=int, help='Activity ID')
-@click.option('--pretty/--no-pretty', default=True, help='Pretty-print JSON output (default: pretty)')
-@click.option('--output-dir', default=None, help='Directory to write <activity_id>.json to')
-@with_appcontext
-def session_structure(user_id, activity_id, pretty, output_dir):
-    """
-    Analyse whether an activity is a structured interval session and characterise its structure.
-    """
-    click.echo(f"Analysing session structure for user {user_id}, activity {activity_id}...")
+            if mode == 'llm':
+                llm_path = os.path.join(output_dir, f"{date_prefix}_{act_id}_llm_payload.json")
+                with open(llm_path, 'w', encoding='utf-8') as f:
+                    f.write(json.dumps(result['llm_payload'], indent=indent))
+                click.echo(f"  LLM payload written to {llm_path}", err=True)
+            else:
+                id_path = os.path.join(output_dir, f"{date_prefix}_{act_id}_identification.json")
+                with open(id_path, 'w', encoding='utf-8') as f:
+                    f.write(json.dumps(identification, indent=indent))
+                click.echo(f"  Identification written to {id_path}", err=True)
 
-    result = analyse_session_structure(user_id, activity_id, pretty=pretty, output_dir=output_dir)
-
-    if not result:
-        click.echo(f"Error: Failed to analyse session structure for activity {activity_id}", err=True)
-        return
-
-    click.echo(result)
+                if result.get('metrics'):
+                    ass_path = os.path.join(output_dir, f"{date_prefix}_{act_id}_metrics.json")
+                    with open(ass_path, 'w', encoding='utf-8') as f:
+                        f.write(json.dumps(result['metrics'], indent=indent))
+                    click.echo(f"  Metrics written to {ass_path}", err=True)

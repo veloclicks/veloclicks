@@ -14,7 +14,7 @@ const AIInsightsSection = ({ activityId, isPremiumUser, colors }) => {
 
       const token = localStorage.getItem('authToken');
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/insights/activity/${activityId}/ai-insights?detail_level=simple`,
+        `${process.env.NEXT_PUBLIC_API_URL}/ai-coach/activity/${activityId}?mode=llm`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -29,7 +29,7 @@ const AIInsightsSection = ({ activityId, isPremiumUser, colors }) => {
       }
 
       const data = await response.json();
-      setInsights(data.insights);
+      setInsights(data.coaching);
     } catch (err) {
       setError(err.message);
     } finally {

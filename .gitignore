@@ -79,5 +79,4 @@ lambda_layers
 
 zappa/veloclicks-dev-1767618005.tar.gz
 flask/app/output/17771255243.json
-output/17771255243_session.txt
-output/17771255243.txt
+output/

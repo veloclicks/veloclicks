@@ -171,11 +171,12 @@ def create_app(*args, **kwargs) -> Flask:
     from app.strava import strava_bp
     app.register_blueprint(strava_bp)
 
-    from app.agent import agent_bp
-    app.register_blueprint(agent_bp)
+    # DEPRECATED: agent blueprint replaced by ai_coach
+    # from app.agent import agent_bp
+    # app.register_blueprint(agent_bp)
 
-    from app.insights import insights_bp
-    app.register_blueprint(insights_bp)
+    from app.ai_coach import ai_coach_bp
+    app.register_blueprint(ai_coach_bp)
 
     # Register CLI commands
     from app.admin.cli import admin

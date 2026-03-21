@@ -1,6 +1,8 @@
 """
-Tool definitions for Anthropic Claude API.
-These define what functions the AI agent can call to get activity data.
+DEPRECATED — replaced by app.insights.activity_coach.
+
+Tool definitions for the old agentic loop. No longer called by active code.
+Kept for reference only.
 """
 
 import logging

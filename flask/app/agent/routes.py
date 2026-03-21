@@ -1,6 +1,8 @@
 """
-Agent callback API endpoints.
-These endpoints expose features for an agent as opposed to being a direct entrypoint for users
+DEPRECATED — agent callback endpoints are no longer registered.
+
+These routes supported the old agentic tool-calling loop. The blueprint
+registration in app/__init__.py has been commented out. Kept for reference.
 """
 
 import logging

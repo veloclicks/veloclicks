@@ -1,6 +1,9 @@
 """
-AI agent orchestration logic.
-Handles all LLM interactions and tool calling for generating insights.
+DEPRECATED — replaced by app.insights.activity_coach.
+
+The agentic tool-calling loop has been superseded by a single-call approach
+that pre-assembles all analytics data into one prompt. This file is kept for
+reference only and is no longer imported by any active code.
 """
 
 import json

@@ -57,6 +57,12 @@ class Activity(db.Model):
     time_in_zones = Column(Text, nullable=True)             # JSON: {zone_name: seconds}
     tss = Column(Float(12, 1), nullable=True)               # Training Stress Score (heart rate based)
 
+    # Workout Analysis
+    identification_data   = Column(Text, nullable=True)     # JSON: Step 1 classification + evidence
+    assessment_data       = Column(Text, nullable=True)     # JSON: Step 3 effectiveness analytics
+    confirmed_type        = Column(String(32), nullable=True)  # e.g. 'threshold_type_i', 'vo2_type_ii'
+    classification_source = Column(String(16), nullable=True)  # 'deterministic' | 'user_confirmed'
+
     def __repr__(self):
         return f"{self.email}"
     
