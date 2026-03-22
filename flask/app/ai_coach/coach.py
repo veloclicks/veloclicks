@@ -9,7 +9,6 @@ import json
 import logging
 import os
 
-from anthropic import Anthropic
 from flask import current_app
 
 logger = logging.getLogger(__name__)
@@ -71,6 +70,7 @@ def _call_llm(prompt: str, detail_level: str) -> tuple:
     model      = os.getenv('LLM_MODEL', 'claude-sonnet-4-6-20251101')
     max_tokens = 800 if detail_level == 'simple' else 2000
 
+    from anthropic import Anthropic
     client   = Anthropic(api_key=api_key)
     response = client.messages.create(
         model      = model,

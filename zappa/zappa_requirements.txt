@@ -18,8 +18,9 @@ zappa>=0.60.3
 Flask-Limiter==3.5.0
 boto3>=1.26.0
 
-# Numeric libs (must be Docker-built)
+# Numeric libs (must be Docker-built, provided via Lambda layers)
 #numpy==1.24.3
+#pandas==1.5.3
 
 # Anthropic SDK for Claude API access (pydantic comes from Lambda layer)
 anthropic>=0.39.0
