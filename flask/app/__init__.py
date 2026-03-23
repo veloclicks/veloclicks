@@ -5,7 +5,6 @@ from flask_cors import CORS
 import logging
 import sys
 
-
 #
 # Test broker connection to redis
 #

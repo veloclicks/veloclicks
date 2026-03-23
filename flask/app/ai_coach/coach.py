@@ -58,7 +58,8 @@ def generate_coaching(llm_payload: dict, detail_level: str = 'simple') -> dict:
         coaching, token_usage = _call_llm(prompt, detail_level)
         return {'success': True, 'coaching': coaching, 'token_usage': token_usage}
     except Exception as e:
-        logger.error(f"generate_coaching() LLM call failed: {e}")
+        import traceback
+        logger.error(f"generate_coaching() LLM call failed: {e}\n{traceback.format_exc()}")
         return {'success': False, 'error': str(e)}
 
 
@@ -69,6 +70,15 @@ def _call_llm(prompt: str, detail_level: str) -> tuple:
 
     model      = os.getenv('LLM_MODEL', 'claude-sonnet-4-6-20251101')
     max_tokens = 800 if detail_level == 'simple' else 2000
+
+    import sys
+    dp_state = sys.modules.get('docstring_parser', 'NOT IN sys.modules')
+    logger.debug(f"_call_llm() docstring_parser in sys.modules: {dp_state}")
+    if dp_state != 'NOT IN sys.modules':
+        dp_keys = [k for k in sys.modules.keys() if 'docstring_parser' in k]
+        logger.debug(f"_call_llm() docstring_parser keys in sys.modules: {dp_keys}")
+        if hasattr(dp_state, '__file__'):
+            logger.debug(f"_call_llm() docstring_parser loaded from: {dp_state.__file__}")
 
     from anthropic import Anthropic
     client   = Anthropic(api_key=api_key)

@@ -1,12 +1,12 @@
 version: '3.8'
 
 # context: sets the folder which docker compose can 'see' and use as a root folder when creating containers
-#          this is set relative to the folder where the docker-compose file is. Thus for react, i set the 
+#          this is set relative to the folder where the docker-compose file is. Thus for react, i set the
 #          context to ./frontend as the frontend folder is one below the folder containing docker-compose.
 #          NB: THe context also specifies the local folder that Dockerfile uses as its root, the Dockerfile
 #              cannnot see above this folder.
-# volumes: Determines where to mount local files in the container. Using ./flask:/app means the folders 
-#          under my local './flask' folder will be copied to the 'app' folder in the container. 
+# volumes: Determines where to mount local files in the container. Using ./flask:/app means the folders
+#          under my local './flask' folder will be copied to the 'app' folder in the container.
 #          The folder structure in the container will be: /app/app/. __init__.py will therefore be in /app/app folder
 services:
   db:
@@ -26,7 +26,7 @@ services:
       dockerfile: Dockerfile
     ports:
         - 5002:5000
-    env_file: .env   
+    env_file: .env
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
       # don't want celery started in create_app
@@ -35,15 +35,24 @@ services:
       - PYTHONUNBUFFERED=1
     depends_on:
       - db
-      - redis
-   
+
     volumes:
       - ./flask:/app
     restart: unless-stopped
 
+  lambdas:
+    container_name: vc_lambdas
+    build:
+      context: ./lambdas/coach
+      dockerfile: Dockerfile
+    ports:
+      - 3001:8080
+    env_file: .env
+    restart: unless-stopped
+
   #frontend:
   #  container_name: vc_react
-  #  build: 
+  #  build:
   #    context: ./frontend
   #    dockerfile: Dockerfile
   #  ports:
@@ -56,41 +65,38 @@ services:
   #  volumes:
   #    - ./frontend:/app
       # This worked initially but once I added my own modules it failed
-      # This is because, at build time, node_modules gets created inside the image but 
+      # This is because, at build time, node_modules gets created inside the image but
       # in docker-compose.yml it mounts my source code (folders under frontend) into /app:
-      # The first mapping (./frontend:/app) replaces under /app with the folders under 
-      # my frontend directory. Since my local machine doesn’t have node_modules (it’s in .
-      # .gitignore, it ends up empty, even though node_modules was installed during the image 
+      # The first mapping (./frontend:/app) replaces under /app with the folders under
+      # my frontend directory. Since my local machine doesn't have node_modules (it's in .
+      # .gitignore, it ends up empty, even though node_modules was installed during the image
       # build.
 
       #- /app/node_modules
       # Instead, map to a named volume
   #    - node_modules:/app/node_modules
   #  restart: unless-stopped
-    
-  
-  celery:
-    container_name: vc_celery
-    build: 
-      # set context so docker-compose knows where to work from - but because we need to copy across
-      # flask, we need to set the context to be one up
-      context: .
-      dockerfile: celery/Dockerfile
-    volumes:
-      - ./flask:/app
-    depends_on:
-      - redis
-    environment:
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
 
-    command: celery -A app.make_celery worker --loglevel=debug
-  
-  redis:
-    image: "redis:alpine"
-    ports:
-      - "6379:6379"
-  
+
+  #celery:
+  #  container_name: vc_celery
+  #  build:
+  #    context: .
+  #    dockerfile: celery/Dockerfile
+  #  volumes:
+  #    - ./flask:/app
+  #  depends_on:
+  #    - redis
+  #  environment:
+  #    - CELERY_BROKER_URL=redis://redis:6379/0
+  #    - CELERY_RESULT_BACKEND=redis://redis:6379/0
+  #  command: celery -A app.make_celery worker --loglevel=debug
+
+  #redis:
+  #  image: "redis:alpine"
+  #  ports:
+  #    - "6379:6379"
+
 volumes:
   # to persist the database tables
   postgres_data:

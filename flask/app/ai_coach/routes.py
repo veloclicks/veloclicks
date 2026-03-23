@@ -7,7 +7,6 @@ from flask import jsonify, request, current_app
 from app.ai_coach import ai_coach_bp
 from app.models.user import User, MembershipType
 from app.analytics import activity_analyser
-from app.ai_coach import coach
 import jwt
 
 logger = logging.getLogger(__name__)
@@ -24,6 +23,48 @@ def _get_user_id_from_token():
         return payload.get('user_id')
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, IndexError):
         return None
+
+
+@ai_coach_bp.route("/activity/<int:id>/v2", methods=["GET"])
+def activity_coaching_v2(id):
+    """Calls the coach Lambda for LLM coaching feedback."""
+    import boto3, json, os
+
+    detail_level = request.args.get('detail_level', 'simple')
+
+    user_id = _get_user_id_from_token()
+    if not user_id:
+        return jsonify({"error": "Authentication required"}), 401
+
+    result = activity_analyser.analyse_activity(user_id, id, mode='llm')
+    if not result['success']:
+        return jsonify({'error': result['error']}), 500
+
+    llm_payload = result.get('llm_payload')
+    if not llm_payload:
+        return jsonify({'error': 'Failed to assemble activity data'}), 500
+
+    endpoint_url = os.environ.get('COACH_LAMBDA_ENDPOINT', 'http://lambdas:8080')
+    client = boto3.client(
+        'lambda',
+        endpoint_url=endpoint_url,
+        region_name='eu-west-2',
+        aws_access_key_id='local',
+        aws_secret_access_key='local',
+    )
+    response = client.invoke(
+        FunctionName='function',
+        Payload=json.dumps({'llm_payload': llm_payload, 'detail_level': detail_level}),
+    )
+    coaching_result = json.loads(response['Payload'].read())
+
+    if not coaching_result.get('success'):
+        return jsonify({'error': coaching_result.get('error')}), 500
+
+    return jsonify({
+        'coaching':    coaching_result['coaching'],
+        'token_usage': coaching_result.get('token_usage'),
+    }), 200
 
 
 @ai_coach_bp.route("/activity/<int:id>", methods=["GET"])
@@ -67,6 +108,7 @@ def activity_coaching(id):
         }), 200
 
     # mode == 'llm': generate coaching prose
+    from app.ai_coach import coach
     llm_payload = result.get('llm_payload')
     if not llm_payload:
         return jsonify({'error': 'Failed to assemble activity data'}), 500

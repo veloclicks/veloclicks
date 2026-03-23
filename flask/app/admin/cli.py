@@ -37,7 +37,6 @@ from app.models.strava import Activity
 from app.analytics import activity_tss, activity_power, activity_report as activity_report_module
 from app.analytics import activity_analyser
 from app.profile import tools as profile_tools
-from app.ai_coach import coach as ai_coach
 
 logger = logging.getLogger(__name__)
 
@@ -485,6 +484,7 @@ def activity_insights(user_id, activity_id, detail_level):
     click.echo("=" * 80)
 
     # Build LLM payload then generate coaching prose
+    from app.ai_coach import coach as ai_coach
     analysis = activity_analyser.analyse_activity(user_id, activity_id, mode='llm')
     if not analysis['success']:
         click.echo(f"Error: {analysis['error']}", err=True)
