@@ -3,6 +3,9 @@ AI coaching API endpoints.
 """
 
 import logging
+import boto3
+import json
+import os
 from flask import jsonify, request, current_app
 from app.ai_coach import ai_coach_bp
 from app.models.user import User, MembershipType
@@ -25,60 +28,20 @@ def _get_user_id_from_token():
         return None
 
 
-@ai_coach_bp.route("/activity/<int:id>/v2", methods=["GET"])
-def activity_coaching_v2(id):
-    """Calls the coach Lambda for LLM coaching feedback."""
-    import boto3, json, os
-
-    detail_level = request.args.get('detail_level', 'simple')
-
-    user_id = _get_user_id_from_token()
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-
-    result = activity_analyser.analyse_activity(user_id, id, mode='llm')
-    if not result['success']:
-        return jsonify({'error': result['error']}), 500
-
-    llm_payload = result.get('llm_payload')
-    if not llm_payload:
-        return jsonify({'error': 'Failed to assemble activity data'}), 500
-
-    endpoint_url = os.environ.get('COACH_LAMBDA_ENDPOINT', 'http://lambdas:8080')
-    client = boto3.client(
-        'lambda',
-        endpoint_url=endpoint_url,
-        region_name='eu-west-2',
-        aws_access_key_id='local',
-        aws_secret_access_key='local',
-    )
-    response = client.invoke(
-        FunctionName='function',
-        Payload=json.dumps({'llm_payload': llm_payload, 'detail_level': detail_level}),
-    )
-    coaching_result = json.loads(response['Payload'].read())
-
-    if not coaching_result.get('success'):
-        return jsonify({'error': coaching_result.get('error')}), 500
-
-    return jsonify({
-        'coaching':    coaching_result['coaching'],
-        'token_usage': coaching_result.get('token_usage'),
-    }), 200
+def _get_lambda_client():
+    """Return a boto3 Lambda client — local endpoint if configured, otherwise real AWS."""
+    endpoint_url = os.environ.get('COACH_LAMBDA_ENDPOINT')
+    kwargs = dict(region_name='eu-west-2')
+    if endpoint_url:
+        kwargs['endpoint_url'] = endpoint_url
+        kwargs['aws_access_key_id'] = 'local'
+        kwargs['aws_secret_access_key'] = 'local'
+    return boto3.client('lambda', **kwargs)
 
 
 @ai_coach_bp.route("/activity/<int:id>", methods=["GET"])
 def activity_coaching(id):
-    """
-    Generate AI coaching feedback for an activity (premium only).
-
-    Query params:
-        detail_level: 'simple' (default) or 'detailed'
-    """
-    mode = request.args.get('mode', 'llm')
-    if mode not in ('structure', 'full', 'llm'):
-        return jsonify({"error": "mode must be 'structure', 'full', or 'llm'"}), 400
-
+    """Generate AI coaching feedback for an activity via the coach Lambda."""
     detail_level = request.args.get('detail_level', 'simple')
     if detail_level not in ('simple', 'detailed'):
         return jsonify({"error": "detail_level must be 'simple' or 'detailed'"}), 400
@@ -94,30 +57,33 @@ def activity_coaching(id):
     if user.membership_type != MembershipType.PREMIUM_TIER:
         return jsonify({"error": "Premium membership required"}), 403
 
-    result = activity_analyser.analyse_activity(user_id, id, mode=mode)
+    result = activity_analyser.analyse_activity(user_id, id, mode='llm')
     if not result['success']:
         return jsonify({'error': result['error']}), 500
 
-    if mode == 'structure':
-        return jsonify({'identification': result['identification']}), 200
-
-    if mode == 'full':
-        return jsonify({
-            'identification': result['identification'],
-            'metrics':        result['metrics'],
-        }), 200
-
-    # mode == 'llm': generate coaching prose
-    from app.ai_coach import coach
     llm_payload = result.get('llm_payload')
     if not llm_payload:
         return jsonify({'error': 'Failed to assemble activity data'}), 500
 
-    coaching_result = coach.generate_coaching(llm_payload, detail_level=detail_level)
-    if not coaching_result['success']:
-        return jsonify({'error': coaching_result['error']}), 500
+    function_name = os.environ.get('COACH_LAMBDA_NAME', 'veloclicks-coach')
+    client = _get_lambda_client()
+    response = client.invoke(
+        FunctionName=function_name,
+        Payload=json.dumps({'llm_payload': llm_payload, 'detail_level': detail_level}),
+    )
+    coaching_result = json.loads(response['Payload'].read())
+
+    if not coaching_result.get('success'):
+        return jsonify({'error': coaching_result.get('error')}), 500
 
     return jsonify({
         'coaching':    coaching_result['coaching'],
         'token_usage': coaching_result.get('token_usage'),
     }), 200
+
+
+# ---- DEPRECATED: direct anthropic call, broken on Lambda due to docstring_parser conflict ----
+# @ai_coach_bp.route("/activity/<int:id>/old", methods=["GET"])
+# def activity_coaching_old(id):
+#     mode = request.args.get('mode', 'llm')
+#     ...
