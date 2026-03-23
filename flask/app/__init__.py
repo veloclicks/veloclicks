@@ -208,3 +208,5 @@ def create_app(*args, **kwargs) -> Flask:
 
 # Create app instance for Zappa (Docker will continue using create_app() directly)
 application = create_app()
+
+
