@@ -53,15 +53,7 @@ class Activity(db.Model):
     # Power Analysis
     ftp = Column(Integer, nullable=True)                    # User's FTP at time of activity
     rpe = Column(Integer, nullable=True)                    # Rate of Perceived Exertion (1-10)
-    power_curve_data = Column(Text, nullable=True)          # JSON: {duration_seconds: max_watts}
-    time_in_zones = Column(Text, nullable=True)             # JSON: {zone_name: seconds}
     tss = Column(Float(12, 1), nullable=True)               # Training Stress Score (heart rate based)
-
-    # Workout Analysis
-    identification_data   = Column(Text, nullable=True)     # JSON: Step 1 classification + evidence
-    assessment_data       = Column(Text, nullable=True)     # JSON: Step 3 effectiveness analytics
-    confirmed_type        = Column(String(32), nullable=True)  # e.g. 'threshold_type_i', 'vo2_type_ii'
-    classification_source = Column(String(16), nullable=True)  # 'deterministic' | 'user_confirmed'
 
     def __repr__(self):
         return f"{self.email}"
@@ -93,8 +85,6 @@ class Activity(db.Model):
             "elev_high": round(float(self.elev_high), 2) if self.elev_high is not None else None,
             "ftp": self.ftp,
             "rpe": self.rpe,
-            "power_curve_data": self.power_curve_data,
-            "time_in_zones": self.time_in_zones,
             "tss": round(float(self.tss), 1) if self.tss is not None else None,
         }
 

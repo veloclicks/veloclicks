@@ -34,6 +34,7 @@ from sqlalchemy import extract
 
 from app.models import db
 from app.models.strava import Activity
+from app.models.analytics import ActivityAnalytics
 from app.analytics import activity_tss, activity_power, activity_report as activity_report_module
 from app.analytics import activity_analyser
 from app.profile import tools as profile_tools
@@ -197,9 +198,10 @@ def list_activities(user_id, year, month):
 
         # Check if power curve exists
         has_power_curve = False
-        if activity.power_curve_data:
+        analytics = ActivityAnalytics.query.filter_by(activity_id=activity.id).first()
+        if analytics and analytics.power_curve_data:
             try:
-                power_data = json.loads(activity.power_curve_data)
+                power_data = json.loads(analytics.power_curve_data)
                 has_power_curve = len(power_data) > 0
             except:
                 pass
@@ -217,7 +219,8 @@ def list_activities(user_id, year, month):
     # Calculate summary stats
     activities_with_tss = sum(1 for a in activities if a.tss is not None and a.tss > 0)
     activities_with_np = sum(1 for a in activities if a.weighted_average_watts is not None)
-    activities_with_power_curve = sum(1 for a in activities if a.power_curve_data and len(a.power_curve_data) > 2)
+    analytics_map = {a.activity_id: a for a in ActivityAnalytics.query.filter(ActivityAnalytics.activity_id.in_([a.id for a in activities])).all()}
+    activities_with_power_curve = sum(1 for a in activities if analytics_map.get(a.id) and analytics_map[a.id].power_curve_data and len(analytics_map[a.id].power_curve_data) > 2)
 
     click.echo(f"With TSS: {activities_with_tss} | With NP: {activities_with_np} | With Power Curve: {activities_with_power_curve}")
     click.echo("=" * 140)
@@ -271,7 +274,8 @@ def calculate_metrics(user_id, year, month, skip_existing):
         click.echo(f"\nActivity {activity.id} ({activity_date}): {activity.name}")
 
         # Calculate power metrics
-        has_power_data = activity.power_curve_data or activity.time_in_zones
+        _analytics = ActivityAnalytics.query.filter_by(activity_id=activity.id).first()
+        has_power_data = _analytics and (_analytics.power_curve_data or _analytics.time_in_zones)
         if skip_existing and has_power_data:
             click.echo("  [Power] Skipping (already calculated)")
             power_skipped += 1
@@ -367,7 +371,8 @@ def calculate_power(user_id, year, month, skip_existing):
         activity_date = activity.start_date_local.strftime('%Y-%m-%d')
         click.echo(f"\nActivity {activity.id} ({activity_date}): {activity.name}")
 
-        has_power_data = activity.power_curve_data or activity.time_in_zones
+        _analytics = ActivityAnalytics.query.filter_by(activity_id=activity.id).first()
+        has_power_data = _analytics and (_analytics.power_curve_data or _analytics.time_in_zones)
         if skip_existing and has_power_data:
             click.echo("  Skipping (already calculated)")
             skipped += 1

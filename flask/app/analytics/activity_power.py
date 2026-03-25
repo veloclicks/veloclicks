@@ -5,6 +5,7 @@ from typing import Dict, List, Optional
 
 from app.models import db
 from app.models.strava import Activity
+from app.models.analytics import ActivityAnalytics
 from app.profile.training_zones import get_user_zones
 from app.models.training_zone import ZoneType
 from app.strava.streams import get_activity_streams
@@ -93,16 +94,21 @@ def calculate_power_curve(user_id: int, activity_id: int) -> Optional[Dict[int, 
             logger.error(f"Activity {activity_id} not found for user {user_id}")
             return None
 
+        analytics = ActivityAnalytics.query.filter_by(activity_id=activity_id).first()
+        if not analytics:
+            analytics = ActivityAnalytics(activity_id=activity_id, user_id=user_id)
+            db.session.add(analytics)
+
         six_hours = 6 * 3600
         if activity.moving_time and activity.moving_time > six_hours:
             logger.warning(f"Activity {activity_id} duration ({activity.moving_time}s) exceeds 6hr limit - power curve not supported")
-            activity.power_curve_data = '{}'
+            analytics.power_curve_data = '{}'
             db.session.commit()
             return {}
 
         streams = get_activity_streams(user_id, activity_id, ['watts', 'time'])
         if not streams or 'watts' not in streams or 'time' not in streams:
-            activity.power_curve_data = '{}'
+            analytics.power_curve_data = '{}'
             db.session.commit()
             logger.warning(f"No power data available for activity {activity_id}")
             return {}
@@ -112,7 +118,7 @@ def calculate_power_curve(user_id: int, activity_id: int) -> Optional[Dict[int, 
         logger.info(f"Retrieved {len(watts_data)} power data points for activity {activity_id}")
 
         if not watts_data or len(watts_data) == 0:
-            activity.power_curve_data = '{}'
+            analytics.power_curve_data = '{}'
             db.session.commit()
             logger.warning(f"Empty power data for activity {activity_id}")
             return {}
@@ -127,9 +133,6 @@ def calculate_power_curve(user_id: int, activity_id: int) -> Optional[Dict[int, 
         logger.info(f"Calculating power curve for activity {activity_id} with {len(durations)} durations.....")
 
         power_curve = {}
-        # Prefix sum approach: cumsum[i+d] - cumsum[i] == sum(watts[i:i+d]),
-        # giving the same rolling average as np.convolve but in O(n) per duration
-        # rather than O(n*m), which avoids timeouts on long activities.
         cumsum = np.cumsum(np.insert(watts_array, 0, 0))
 
         for duration in durations:
@@ -139,7 +142,7 @@ def calculate_power_curve(user_id: int, activity_id: int) -> Optional[Dict[int, 
             max_power = float(np.max(rolling_avg))
             power_curve[duration] = round(max_power, 2)
 
-        activity.power_curve_data = json.dumps(power_curve)
+        analytics.power_curve_data = json.dumps(power_curve)
         db.session.commit()
 
         logger.info(f"Calculated power curve for activity {activity_id}: {len(power_curve)} data points")
@@ -164,16 +167,21 @@ def calculate_power_distribution(user_id: int, activity_id: int) -> Optional[Dic
             logger.error(f"Activity {activity_id} not found for user {user_id}")
             return None
 
+        analytics = ActivityAnalytics.query.filter_by(activity_id=activity_id).first()
+        if not analytics:
+            analytics = ActivityAnalytics(activity_id=activity_id, user_id=user_id)
+            db.session.add(analytics)
+
         streams = get_activity_streams(user_id, activity_id, ['watts', 'time'])
         if not streams or 'watts' not in streams:
-            activity.time_in_zones = '{}'
+            analytics.time_in_zones = '{}'
             db.session.commit()
             logger.warning(f"No power data available for activity {activity_id}")
             return {}
 
         watts_data = streams['watts']['data']
         if not watts_data or len(watts_data) == 0:
-            activity.time_in_zones = '{}'
+            analytics.time_in_zones = '{}'
             db.session.commit()
             logger.warning(f"Empty power data for activity {activity_id}")
             return {}
@@ -181,7 +189,7 @@ def calculate_power_distribution(user_id: int, activity_id: int) -> Optional[Dic
         zones = get_user_zones(user_id, ZoneType.POWER)
         if not zones:
             logger.warning(f"No power zones configured for user {user_id} - FTP not set")
-            activity.time_in_zones = '{}'
+            analytics.time_in_zones = '{}'
             db.session.commit()
             return {}
 
@@ -197,7 +205,7 @@ def calculate_power_distribution(user_id: int, activity_id: int) -> Optional[Dic
                     time_in_zones[zone['name']] += 1
                     break
 
-        activity.time_in_zones = json.dumps(time_in_zones)
+        analytics.time_in_zones = json.dumps(time_in_zones)
         db.session.commit()
 
         logger.info(f"Calculated time in zones for activity {activity_id}: {time_in_zones}")

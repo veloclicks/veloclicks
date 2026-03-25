@@ -4,13 +4,13 @@ Activity analysis: classification and metric extraction.
 Single entry point `analyse_activity` that fetches all required data,
 delegates to the appropriate analytics modules, and persists results to DB.
 
-mode='structure': classify workout type, persist identification_data.
+mode='structure': classify workout type, persist classification_data.
 mode='full':      structure + extract metrics at appropriate frequency,
-                  persist metrics_data.
+                  persist execution_data.
 mode='llm':       full + assemble a stripped-down, token-efficient payload
                   ready to send to an LLM for coaching feedback.
 
-AI coaching is handled separately in app.ai_coach.coach.
+AI coaching is handled separately in app.ai_coach.
 """
 
 import json
@@ -18,6 +18,7 @@ import logging
 
 from app.models.db import db
 from app.models.strava import Activity
+from app.models.analytics import ActivityAnalytics
 from app.models.user import User
 from app.analytics import activity_report as activity_report_module
 from app.analytics import activity_classifier
@@ -27,9 +28,16 @@ from app.analytics import activity_power
 
 logger = logging.getLogger(__name__)
 
-#
-# Common entry point from cli and insights (ffrom the front end)
-#
+
+def _get_or_create_analytics(activity_id, user_id):
+    """Get or create an ActivityAnalytics record for the given activity."""
+    analytics = ActivityAnalytics.query.filter_by(activity_id=activity_id).first()
+    if not analytics:
+        analytics = ActivityAnalytics(activity_id=activity_id, user_id=user_id)
+        db.session.add(analytics)
+    return analytics
+
+
 def analyse_activity(user_id: int, activity_id: int, mode: str = 'structure') -> dict:
     """
     Classify an activity into a type and then extract key metrics that can be used by LLM to interpret to a user in natural language.
@@ -39,23 +47,24 @@ def analyse_activity(user_id: int, activity_id: int, mode: str = 'structure') ->
         activity_id: Activity ID
         mode:        'structure' — classify and return structured data
                      'full'     — structure + extract metrics at appropriate frequency
+                     'llm'      — full + assemble token-efficient LLM payload
 
     Returns:
         dict with keys:
           success         bool
           error           str (on failure)
           identification  dict  (always present on success)
-          metrics      dict  (mode='full' only)
+          metrics         dict  (mode='full' only)
           console_summary dict  (compact subset for console display)
     """
     user = User.query.get(user_id)
     if not user:
         return {'success': False, 'error': f'User {user_id} not found'}
 
-    # get key activity data
     activity = Activity.query.filter_by(id=activity_id, user_id=user_id).first()
     if not activity:
         return {'success': False, 'error': f'Activity {activity_id} not found for user {user_id}'}
+
     ftp    = float(user.ftp)            if user.ftp            else None
     max_hr = float(user.max_heart_rate) if user.max_heart_rate else None
     activity_date = activity.start_date_local.strftime('%Y-%m-%d') if activity.start_date_local else None
@@ -64,29 +73,24 @@ def analyse_activity(user_id: int, activity_id: int, mode: str = 'structure') ->
     # Classification                                                           #
     # ---------------------------------------------------------------------- #
     try:
-        # this is the meaty bit - the classifier should try to classify
-        classified = activity_classifier.classify_activity(user_id, activity_id)
+        classified      = activity_classifier.classify_activity(user_id, activity_id)
         classification  = classified['classification']
         evidence        = classified['evidence']
         evidence_detail = classified['evidence_detail']
         workout_type    = classification['workout_type']
 
         identification = {
-            'activity_id':           str(activity_id),
-            'activity_name':         activity.name,
-            'activity_date':         activity_date,
-            'athlete':               {'ftp': ftp, 'max_hr': max_hr},
-            'classification':        classification,
-            'evidence':              evidence,
-            'evidence_detail':       evidence_detail or None,
-            'classification_source': 'deterministic',
+            'activity_id':     str(activity_id),
+            'activity_name':   activity.name,
+            'activity_date':   activity_date,
+            'athlete':         {'ftp': ftp, 'max_hr': max_hr},
+            'classification':  classification,
+            'evidence':        evidence,
+            'evidence_detail': evidence_detail or None,
         }
 
-        activity.identification_data   = json.dumps(identification)
-        activity.confirmed_type        = workout_type + (
-            f"_{classification['interval_type']}" if classification.get('interval_type') else ''
-        )
-        activity.classification_source = 'deterministic'
+        analytics = _get_or_create_analytics(activity_id, user_id)
+        analytics.classification_data = json.dumps(identification)
         db.session.commit()
 
     except Exception as e:
@@ -108,18 +112,17 @@ def analyse_activity(user_id: int, activity_id: int, mode: str = 'structure') ->
     # ---------------------------------------------------------------------- #
     # Ensure base metrics are computed (full / llm mode)                       #
     # ---------------------------------------------------------------------- #
-    _ensure_base_metrics(activity, user_id, activity_id)
+    _ensure_base_metrics(activity, analytics, user_id, activity_id)
     db.session.refresh(activity)
+    db.session.refresh(analytics)
 
     # ---------------------------------------------------------------------- #
     # Metric extraction (full mode)                                            #
     # ---------------------------------------------------------------------- #
     try:
         if workout_type in ('threshold', 'vo2'):
-            # Per-rep snapshots already computed by _analyse_activity_structure
             metrics_payload = evidence_detail or {}
 
-            # Derive advanced metrics from interval structure + athlete thresholds
             sets       = metrics_payload.get('sets', [])
             intervals  = [iv for s in sets for iv in s.get('intervals',  [])]
             recoveries = [r  for s in sets for r  in s.get('recoveries', [])]
@@ -136,20 +139,17 @@ def analyse_activity(user_id: int, activity_id: int, mode: str = 'structure') ->
                 )
                 metrics_payload = {**metrics_payload, **advanced}
         else:
-            # endurance / tempo: 15-min time-series snapshots
-            # TODO: make snapshot frequency dependent on duration for tempo
             raw = activity_report_module.generate_activity_report_json(user_id, activity_id)
             metrics_payload = json.loads(raw) if raw else {}
 
         metrics = {
-            'activity_id':    str(activity_id),
-            'activity_name':  activity.name,
-            'activity_date':  activity_date,
-            'confirmed_type': activity.confirmed_type,
-            'data':           metrics_payload,
+            'activity_id':   str(activity_id),
+            'activity_name': activity.name,
+            'activity_date': activity_date,
+            'data':          metrics_payload,
         }
 
-        activity.assessment_data = json.dumps(metrics)
+        analytics.execution_data = json.dumps(metrics)
         db.session.commit()
 
         result['metrics'] = metrics
@@ -174,13 +174,13 @@ def analyse_activity(user_id: int, activity_id: int, mode: str = 'structure') ->
     return result
 
 
-def _ensure_base_metrics(activity, user_id: int, activity_id: int) -> None:
+def _ensure_base_metrics(activity, analytics, user_id: int, activity_id: int) -> None:
     """Compute and persist TSS and time-in-zones if not already present."""
     if not activity.tss:
         logger.info(f"_ensure_base_metrics() TSS missing for {activity_id} — computing")
         activity_tss.calculate_tss(user_id, activity_id)
 
-    tiz = activity.time_in_zones
+    tiz = analytics.time_in_zones
     if not tiz or tiz in ('{}', '[]', ''):
         logger.info(f"_ensure_base_metrics() time_in_zones missing for {activity_id} — computing")
         activity_power.calculate_power_distribution(user_id, activity_id)
@@ -189,9 +189,6 @@ def _ensure_base_metrics(activity, user_id: int, activity_id: int) -> None:
 def _build_llm_payload(activity, identification: dict, data: dict) -> dict:
     """
     Assemble a stripped-down, token-efficient payload for LLM coaching.
-
-    Includes whole-ride metrics from the Activity model, classification,
-    and analytics data with snapshots removed.
     """
     classification = identification.get('classification', {})
     athlete        = identification.get('athlete', {})
@@ -200,14 +197,9 @@ def _build_llm_payload(activity, identification: dict, data: dict) -> dict:
     secs = int(activity.moving_time or 0)
     duration_str = f"{secs // 3600}h {(secs % 3600) // 60}m"
 
-    # Fields to keep per rep
-    REP_KEEP = {'rep_number', 'duration_s', 'avg_power_w', 'avg_hr_bpm', 'hr_at_end_bpm', 'avg_cadence_rpm'}
-    WIA_KEEP = {'hr_lag_s', 'cadence_drop_pct'}
-
-    # Fields to drop from execution_summary (covered by natural-language labels or % equivalents)
-    ES_DROP = {'avg_interval_power_w', 'session_max_power_w', 'avg_end_hr_bpm_last_rep', 'recovery_power_w'}
-
-    # Flags to drop (LLM doesn't need booleans when it has natural-language summaries)
+    REP_KEEP   = {'rep_number', 'duration_s', 'avg_power_w', 'avg_hr_bpm', 'hr_at_end_bpm', 'avg_cadence_rpm'}
+    WIA_KEEP   = {'hr_lag_s', 'cadence_drop_pct'}
+    ES_DROP    = {'avg_interval_power_w', 'session_max_power_w', 'avg_end_hr_bpm_last_rep', 'recovery_power_w'}
     FLAGS_DROP = {'power_fade_flag', 'cadence_collapse_flag', 'insufficient_hr_response_flag', 'late_fatigue_flag'}
 
     payload = {
@@ -223,7 +215,7 @@ def _build_llm_payload(activity, identification: dict, data: dict) -> dict:
         },
         'whole_ride_metrics': {
             'normalised_power_w': int(round(float(activity.weighted_average_watts))) if activity.weighted_average_watts else None,
-            'tss':                round(float(activity.tss), 1)                     if activity.tss                    else None,
+            'tss':                round(float(activity.tss), 1)                      if activity.tss                   else None,
         },
         'classification': classification,
     }
@@ -248,7 +240,6 @@ def _build_llm_payload(activity, identification: dict, data: dict) -> dict:
             'flags':              {k: v for k, v in raw_flags.items() if k not in FLAGS_DROP},
         }
     else:
-        # Endurance/tempo: time-series segments
         segments = data.get('intervals', [])
         payload['time_series'] = [
             {

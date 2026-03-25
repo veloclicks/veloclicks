@@ -9,6 +9,9 @@ import os
 from flask import jsonify, request, current_app
 from app.ai_coach import ai_coach_bp
 from app.models.user import User, MembershipType
+from app.models.strava import Activity
+from app.models.ai_coach import ActivityInsight
+from app.models.db import db
 from app.analytics import activity_analyser
 import jwt
 
@@ -41,7 +44,7 @@ def _get_lambda_client():
 
 @ai_coach_bp.route("/activity/<int:id>", methods=["GET"])
 def activity_coaching(id):
-    """Generate AI coaching feedback for an activity via the coach Lambda."""
+    """Return persisted AI coaching insight, or generate and persist one via the coach Lambda."""
     detail_level = request.args.get('detail_level', 'simple')
     if detail_level not in ('simple', 'detailed'):
         return jsonify({"error": "detail_level must be 'simple' or 'detailed'"}), 400
@@ -57,6 +60,18 @@ def activity_coaching(id):
     if user.membership_type != MembershipType.PREMIUM_TIER:
         return jsonify({"error": "Premium membership required"}), 403
 
+    activity = Activity.query.filter_by(id=id, user_id=user_id).first()
+    if not activity:
+        return jsonify({"error": "Activity not found"}), 404
+
+    # Return cached insight if already generated
+    insight = ActivityInsight.query.filter_by(
+        activity_id=id, user_id=user_id, insight_type='ACTIVITY_INSIGHT',
+    ).first()
+    if insight:
+        return jsonify({'coaching': insight.coach_insight}), 200
+
+    # Generate via Lambda
     result = activity_analyser.analyse_activity(user_id, id, mode='llm')
     if not result['success']:
         return jsonify({'error': result['error']}), 500
@@ -76,14 +91,16 @@ def activity_coaching(id):
     if not coaching_result.get('success'):
         return jsonify({'error': coaching_result.get('error')}), 500
 
+    insight = ActivityInsight(
+        activity_id=id,
+        user_id=user_id,
+        insight_type='ACTIVITY_INSIGHT',
+        coach_insight=coaching_result['coaching'],
+    )
+    db.session.add(insight)
+    db.session.commit()
+
     return jsonify({
         'coaching':    coaching_result['coaching'],
         'token_usage': coaching_result.get('token_usage'),
     }), 200
-
-
-# ---- DEPRECATED: direct anthropic call, broken on Lambda due to docstring_parser conflict ----
-# @ai_coach_bp.route("/activity/<int:id>/old", methods=["GET"])
-# def activity_coaching_old(id):
-#     mode = request.args.get('mode', 'llm')
-#     ...

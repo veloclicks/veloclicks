@@ -7,27 +7,23 @@ const AIInsightsSection = ({ activityId, isPremiumUser, colors }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const handleGenerateInsights = async () => {
+  const handleGenerate = async () => {
     try {
       setLoading(true);
       setError(null);
-
-      const token = localStorage.getItem('authToken');
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/ai-coach/activity/${activityId}?mode=llm`,
+        `${process.env.NEXT_PUBLIC_API_URL}/ai-coach/activity/${activityId}`,
         {
           headers: {
-            'Authorization': `Bearer ${token}`,
+            'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
             'Content-Type': 'application/json',
           },
         }
       );
-
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to generate insights');
       }
-
       const data = await response.json();
       setInsights(data.coaching);
     } catch (err) {
@@ -40,10 +36,7 @@ const AIInsightsSection = ({ activityId, isPremiumUser, colors }) => {
   return (
     <div
       className="mt-6 rounded-xl shadow-sm"
-      style={{
-        backgroundColor: colors.card,
-        border: `1px solid ${colors.border}`,
-      }}
+      style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}` }}
     >
       <div className="px-6 py-4 border-b" style={{ borderColor: colors.border }}>
         <div className="flex items-center justify-between">
@@ -65,13 +58,17 @@ const AIInsightsSection = ({ activityId, isPremiumUser, colors }) => {
               Upgrade to Premium to get personalized analysis and recommendations
             </p>
           </div>
-        ) : !insights ? (
+        ) : insights ? (
+          <div className="prose prose-xs max-w-none" style={{ color: colors.foreground }}>
+            <div className="whitespace-pre-wrap">{insights}</div>
+          </div>
+        ) : (
           <div className="text-center py-8">
             <p className="text-sm mb-4" style={{ color: colors.mutedForeground }}>
               Get AI-powered analysis of your training session with personalized insights and recommendations
             </p>
             <button
-              onClick={handleGenerateInsights}
+              onClick={handleGenerate}
               disabled={loading}
               className="px-6 py-3 rounded-lg font-medium transition-colors hover:opacity-90 disabled:opacity-50"
               style={{ backgroundColor: colors.accent, color: 'white' }}
@@ -79,27 +76,16 @@ const AIInsightsSection = ({ activityId, isPremiumUser, colors }) => {
               {loading ? (
                 <span className="flex items-center space-x-2">
                   <RefreshCw className="h-4 w-4 animate-spin" />
-                  <span>Generating insights...</span>
+                  <span>Generating...</span>
                 </span>
               ) : (
                 <span className="flex items-center space-x-2">
                   <Sparkles className="h-4 w-4" />
-                  <span>Generate AI Insights</span>
+                  <span>View AI Insights</span>
                 </span>
               )}
             </button>
-            {error && (
-              <p className="mt-4 text-sm text-red-500">{error}</p>
-            )}
-          </div>
-        ) : (
-          <div>
-            <div
-              className="prose prose-xs max-w-none"
-              style={{ color: colors.foreground }}
-            >
-              <div className="whitespace-pre-wrap">{insights}</div>
-            </div>
+            {error && <p className="mt-4 text-sm text-red-500">{error}</p>}
           </div>
         )}
       </div>
