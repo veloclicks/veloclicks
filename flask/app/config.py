@@ -25,12 +25,7 @@ STRAVA_CLIENT_SECRET = None
 ANTHROPIC_API_KEY = None
 LOG_LEVEL = None
 FLASK_APP = None
-SKIP_CELERY = None
 FRONTEND_URL = None
-BROKER_URL = None
-RESULT_BACKEND = None
-# DEMO_USERNAME = None
-# TEST_KEY = None
 
 
 #
@@ -50,14 +45,14 @@ def resolve_ssm_parameter(value):
             return value
     return value
 
+
 #
 # Resolves environment configuration - whether from AWS Param Store or a local .env or zappa settings
-# Zappa settings should contain the non-sensitive config fo AWS, sensitive should be in param store
 #
 def resolve_env_config():
     global DATABASE_URL, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB
     global SECRET_KEY, STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET, ANTHROPIC_API_KEY
-    global LOG_LEVEL, FLASK_APP, SKIP_CELERY, FRONTEND_URL, BROKER_URL, RESULT_BACKEND  # , DEMO_USERNAME, TEST_KEY
+    global LOG_LEVEL, FLASK_APP, FRONTEND_URL
 
     if os.getenv('AWS_EXECUTION_ENV') is not None or os.getenv('AWS_LAMBDA_FUNCTION_NAME') is not None:
         # AWS Lambda - resolve SSM parameters
@@ -84,12 +79,7 @@ def resolve_env_config():
     # Common configuration (both environments)
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
     FLASK_APP = os.getenv('FLASK_APP')
-    SKIP_CELERY = os.getenv('SKIP_CELERY', 'false').lower() == 'true'
     FRONTEND_URL = os.getenv('FRONTEND_URL')
-    BROKER_URL = os.getenv('BROKER_URL')
-    RESULT_BACKEND = os.getenv('RESULT_BACKEND')
-    # DEMO_USERNAME = os.getenv('DEMO_USERNAME', 'demo@veloclicks.com')
-    # TEST_KEY = os.getenv('TEST_KEY')
 
 
 # log environment variables
@@ -103,19 +93,15 @@ def log_config():
         print(f"STRAVA_CLIENT_SECRET: {STRAVA_CLIENT_SECRET[:4]}...{STRAVA_CLIENT_SECRET[-4:]}" if STRAVA_CLIENT_SECRET else "None")
         print(f"ANTHROPIC_API_KEY: {ANTHROPIC_API_KEY[:4]}...{ANTHROPIC_API_KEY[-4:]}" if ANTHROPIC_API_KEY else "None")
         print(f"FLASK_APP: {FLASK_APP}")
-        print(f"SKIP_CELERY: {SKIP_CELERY}")
         print(f"FRONTEND_URL: {FRONTEND_URL}")
-        print(f"BROKER_URL: {BROKER_URL}")
-        print(f"RESULT_BACKEND: {RESULT_BACKEND}")
-        #print(f"DEMO_USERNAME: {DEMO_USERNAME}")
-        #print(f"TEST_KEY: {TEST_KEY}")
         print("-------------------------------------")
     except Exception as e:
         print(f"----- config.py : Exception getting environment config: {e}")
 
 
 resolve_env_config()
-log_config()
+if os.getenv('LOG_LEVEL', 'INFO').upper() == 'DEBUG':
+    log_config()
 
 
 #
@@ -133,9 +119,4 @@ class Config:
 
     LOG_LEVEL = LOG_LEVEL
     FLASK_APP = FLASK_APP
-    SKIP_CELERY = SKIP_CELERY
     FRONTEND_URL = FRONTEND_URL
-    BROKER_URL = BROKER_URL
-    RESULT_BACKEND = RESULT_BACKEND
-    #DEMO_USERNAME = DEMO_USERNAME
-    #TEST_KEY = TEST_KEY

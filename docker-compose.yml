@@ -29,8 +29,6 @@ services:
     env_file: .env
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
-      # don't want celery started in create_app
-      - SKIP_CELERY=true
       - FLASK_APP=__init__:create_app
       - PYTHONUNBUFFERED=1
     depends_on:
