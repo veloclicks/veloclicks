@@ -872,6 +872,13 @@ const ActivityDetailPage = () => {
               </div>
             )}
 
+            {/* AI Insights Section */}
+            <AIInsightsSection
+              activityId={activityId}
+              isPremiumUser={user?.membership_type === 'PREMIUM_TIER'}
+              colors={colors}
+            />
+
             {/* Power Insights Section */}
             {activity.average_watts && (
               <div className="mt-6 rounded-xl shadow-sm" style={{
@@ -1068,12 +1075,6 @@ const ActivityDetailPage = () => {
               </div>
             )}
 
-            {/* AI Insights Section */}
-            <AIInsightsSection
-              activityId={activityId}
-              isPremiumUser={user?.membership_type === 'PREMIUM_TIER'}
-              colors={colors}
-            />
 
           </div>
         </div>

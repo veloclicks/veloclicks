@@ -95,33 +95,10 @@ const AIInsightsSection = ({ activityId, isPremiumUser, colors }) => {
         ) : (
           <div>
             <div
-              className="prose prose-sm max-w-none"
+              className="prose prose-xs max-w-none"
               style={{ color: colors.foreground }}
             >
               <div className="whitespace-pre-wrap">{insights}</div>
-            </div>
-            <div className="mt-6 flex justify-center">
-              <button
-                onClick={handleGenerateInsights}
-                disabled={loading}
-                className="px-4 py-2 rounded-lg text-sm font-medium transition-colors hover:opacity-90 disabled:opacity-50"
-                style={{
-                  backgroundColor: colors.muted,
-                  color: colors.mutedForeground,
-                }}
-              >
-                {loading ? (
-                  <span className="flex items-center space-x-2">
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                    <span>Regenerating...</span>
-                  </span>
-                ) : (
-                  <span className="flex items-center space-x-2">
-                    <RefreshCw className="h-4 w-4" />
-                    <span>Regenerate Insights</span>
-                  </span>
-                )}
-              </button>
             </div>
           </div>
         )}
