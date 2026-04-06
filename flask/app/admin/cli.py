@@ -39,8 +39,10 @@ from app.models.analytics import ActivityAnalytics
 from app.models.ai_coach import ActivityInsight
 from app.analytics import activity_tss, activity_power, activity_report as activity_report_module
 from app.analytics import activity_analyser
+from app.analytics.activity_warmup_finder import detect_warmup
 from app.profile import tools as profile_tools
 from app.ai_coach.routes import _get_lambda_client
+from app.strava.streams import get_activity_streams
 
 logger = logging.getLogger(__name__)
 
@@ -538,6 +540,66 @@ def activity_insights(user_id, activity_id, detail_level):
         click.echo(f"Token Usage: {usage['total_tokens']:,} total ({usage['input_tokens']:,} in, {usage['output_tokens']:,} out)")
         cost = (usage['input_tokens'] * 0.003 / 1000) + (usage['output_tokens'] * 0.015 / 1000)
         click.echo(f"Estimated Cost: ${cost:.4f}")
+    click.echo("=" * 80)
+
+
+# --------------------------------------------------------------------------------------
+#
+#                              DETECT WARMUP
+#
+# --------------------------------------------------------------------------------------
+@admin.command('detect-warmup')
+@click.option('--user-id', required=True, type=int, help='User ID')
+@click.option('--activity-id', required=True, type=int, help='Activity ID')
+@with_appcontext
+def detect_warmup_cmd(user_id, activity_id):
+    """
+    Detect whether an activity contains a warmup period at the start.
+    """
+    click.echo("=" * 80)
+    click.echo(f"DETECT WARMUP - User: {user_id}, Activity: {activity_id}")
+    click.echo("=" * 80)
+
+    activity = Activity.query.filter_by(id=activity_id, user_id=user_id).first()
+    if not activity:
+        click.echo(f"Error: Activity {activity_id} not found for user {user_id}", err=True)
+        return
+
+    from app.models.user import User
+    user = User.query.get(user_id)
+    if not user or not user.ftp:
+        click.echo("Error: User not found or FTP not set", err=True)
+        return
+
+    streams = get_activity_streams(user_id, activity_id, stream_types=['watts', 'cadence', 'heartrate'])
+    if not streams or 'watts' not in streams:
+        click.echo("Error: Power stream not available for this activity", err=True)
+        return
+
+    result = detect_warmup(
+        power_stream=streams['watts']['data'],
+        ftp=float(user.ftp),
+        cadence_stream=streams.get('cadence', {}).get('data'),
+        hr_stream=streams.get('heartrate', {}).get('data'),
+        activity_type=activity.type,
+    )
+
+    date_str = activity.start_date_local.strftime('%d %b %Y') if activity.start_date_local else 'unknown'
+    duration_s = int(activity.moving_time or 0)
+    duration_str = f"{duration_s // 3600}h {(duration_s % 3600) // 60}m"
+    click.echo(f"\nActivity:         {activity.name}")
+    click.echo(f"Date:             {date_str}")
+    click.echo(f"Duration:         {duration_str}")
+    click.echo(f"\nWarmup detected:  {result['warmup_detected']}")
+    click.echo(f"Confidence:       {result['confidence']:.2f}")
+    click.echo(f"Reason:           {result['detection_reason']}")
+    if result['warmup_detected']:
+        mins = result['warmup_end_s'] // 60
+        secs = result['warmup_end_s'] % 60
+        click.echo(f"Warmup ends at:   {mins}m {secs}s (index {result['warmup_end_index']})")
+    click.echo(f"\nDiagnostics:")
+    for k, v in result['diagnostics'].items():
+        click.echo(f"  {k}: {v}")
     click.echo("=" * 80)
 
 

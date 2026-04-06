@@ -104,3 +104,32 @@ def activity_coaching(id):
         'coaching':    coaching_result['coaching'],
         'token_usage': coaching_result.get('token_usage'),
     }), 200
+
+
+@ai_coach_bp.route("/activity/<int:id>/summary", methods=["GET"])
+def activity_summary(id):
+    """Return the JSON activity summary (llm_payload) that would be sent to the coach."""
+    user_id = _get_user_id_from_token()
+    if not user_id:
+        return jsonify({"error": "Authentication required"}), 401
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if user.membership_type != MembershipType.PREMIUM_TIER:
+        return jsonify({"error": "Premium membership required"}), 403
+
+    activity = Activity.query.filter_by(id=id, user_id=user_id).first()
+    if not activity:
+        return jsonify({"error": "Activity not found"}), 404
+
+    result = activity_analyser.analyse_activity(user_id, id, mode='llm')
+    if not result['success']:
+        return jsonify({'error': result['error']}), 500
+
+    llm_payload = result.get('llm_payload')
+    if not llm_payload:
+        return jsonify({'error': 'Failed to assemble activity data'}), 500
+
+    return jsonify({'summary': llm_payload}), 200

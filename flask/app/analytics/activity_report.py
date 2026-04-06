@@ -71,6 +71,10 @@ def generate_activity_report(user_id: str, activity_id: str) -> Optional[pd.Data
         else:
             df[df_col] = float('nan')
 
+    # Strava occasionally emits duplicate timestamps; drop after all streams are loaded
+    # so every column is the same length when we deduplicate.
+    df = df[~df['elapsed_s'].duplicated(keep='last')]
+
     df['speed_kph'] = df['speed_ms'] * 3.6
 
     if df['power_w'].notna().any():
