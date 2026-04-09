@@ -10,25 +10,29 @@ from app.models.training_zone import ZoneType
 
 # Power zone definitions based on FTP (Coggan 7-zone model + Sweet Spot)
 # Format: (name, display_name, min_pct, max_pct, sort_order)
+# Zone boundaries are contiguous (each zone's min_pct == previous zone's max_pct)
+# so that round() produces no gaps between adjacent integer values.
+# Sweet Spot intentionally overlaps z3/z4 — it is a separate tracking category.
 POWER_ZONE_DEFINITIONS = [
     ('z1', 'Z1 - Active Recovery', 0.00, 0.55, 1),
-    ('z2', 'Z2 - Endurance', 0.56, 0.75, 2),
-    ('z3', 'Z3 - Tempo', 0.76, 0.90, 3),
-    ('sweet_spot', 'Sweet Spot', 0.88, 0.94, 4),
-    ('z4', 'Z4 - Threshold', 0.91, 1.05, 5),
-    ('z5', 'Z5 - VO2 Max', 1.06, 1.20, 6),
-    ('z6', 'Z6 - Anaerobic', 1.21, 1.50, 7),
-    ('z7', 'Z7 - Neuromuscular', 1.51, 9999.99, 8),  # Open-ended upper limit
+    ('z2', 'Z2 - Endurance',       0.55, 0.75, 2),
+    ('z3', 'Z3 - Tempo',           0.75, 0.90, 3),
+    ('sweet_spot', 'Sweet Spot',   0.88, 0.94, 4),  # intentional overlap
+    ('z4', 'Z4 - Threshold',       0.90, 1.05, 5),
+    ('z5', 'Z5 - VO2 Max',         1.05, 1.20, 6),
+    ('z6', 'Z6 - Anaerobic',       1.20, 1.50, 7),
+    ('z7', 'Z7 - Neuromuscular',   1.50, 9999.99, 8),  # Open-ended upper limit
 ]
 
 # Heart rate zone definitions based on max HR
 # Format: (name, display_name, min_pct, max_pct, sort_order)
+# Zone boundaries are contiguous so that round() produces no gaps.
 HR_ZONE_DEFINITIONS = [
-    ('z1', 'Z1 - Recovery', 0.00, 0.60, 1),
-    ('z2', 'Z2 - Aerobic', 0.61, 0.70, 2),
-    ('z3', 'Z3 - Tempo', 0.71, 0.80, 3),
-    ('z4', 'Z4 - Threshold', 0.81, 0.90, 4),
-    ('z5', 'Z5 - Maximum', 0.91, 1.50, 5),  # Upper limit accounts for HR spikes
+    ('z1', 'Z1 - Recovery',  0.00, 0.60, 1),
+    ('z2', 'Z2 - Aerobic',   0.60, 0.70, 2),
+    ('z3', 'Z3 - Tempo',     0.70, 0.80, 3),
+    ('z4', 'Z4 - Threshold', 0.80, 0.90, 4),
+    ('z5', 'Z5 - Maximum',   0.90, 1.50, 5),  # Upper limit accounts for HR spikes
 ]
 
 
@@ -48,8 +52,8 @@ def calculate_zones(baseline_value, zone_definitions):
 
     zones = []
     for name, display_name, min_pct, max_pct, sort_order in zone_definitions:
-        min_value = int(baseline_value * min_pct)
-        max_value = int(baseline_value * max_pct)
+        min_value = round(baseline_value * min_pct)
+        max_value = round(baseline_value * max_pct)
 
         zones.append({
             'name': name,

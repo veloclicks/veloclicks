@@ -35,12 +35,14 @@ SHORT_INTERVAL_THRESHOLD_S     = 300
 LONG_INTERVAL_THRESHOLD_S      = 1200
 VERY_LONG_INTERVAL_THRESHOLD_S = 3600
 ENDURANCE_INTERVAL_THRESHOLD_S = 7200
+ULTRA_INTERVAL_THRESHOLD_S     = 18000   # 5 hours
 
 SHORT_SNAPSHOT_INTERVAL_S      = 15
 MEDIUM_SNAPSHOT_INTERVAL_S     = 30
 LONG_SNAPSHOT_INTERVAL_S       = 60
 VERY_LONG_SNAPSHOT_INTERVAL_S  = 120
-ENDURANCE_SNAPSHOT_INTERVAL_S  = 900
+ENDURANCE_SNAPSHOT_INTERVAL_S  = 300     # 5 min — 2hr to 5hr rides
+ULTRA_SNAPSHOT_INTERVAL_S      = 900     # 15 min — 5hr+ rides
 
 MIN_SNAPSHOTS_FOR_THIRDS = 6
 
@@ -55,8 +57,10 @@ def snapshot_interval_s(duration_s: int) -> int:
         return LONG_SNAPSHOT_INTERVAL_S
     elif duration_s < ENDURANCE_INTERVAL_THRESHOLD_S:
         return VERY_LONG_SNAPSHOT_INTERVAL_S
-    else:
+    elif duration_s < ULTRA_INTERVAL_THRESHOLD_S:
         return ENDURANCE_SNAPSHOT_INTERVAL_S
+    else:
+        return ULTRA_SNAPSHOT_INTERVAL_S
 
 
 # ============================================================================ #

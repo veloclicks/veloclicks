@@ -42,7 +42,7 @@ def generate_activity_report(user_id: str, activity_id: str) -> Optional[pd.Data
 
     stream_types = [
         'time', 'distance', 'altitude', 'velocity_smooth',
-        'heartrate', 'cadence', 'watts', 'grade_smooth'
+        'heartrate', 'cadence', 'watts', 'grade_smooth', 'moving'
     ]
     streams = get_activity_streams(user_id, activity_id, stream_types=stream_types)
     if not streams:
@@ -64,6 +64,7 @@ def generate_activity_report(user_id: str, activity_id: str) -> Optional[pd.Data
         'watts':           ('power_w',      'watts'),
         'grade_smooth':    ('gradient_pct', 'grade_smooth'),
         'altitude':        ('altitude_m',   'altitude'),
+        'moving':          ('moving',       'moving'),
     }
     for _, (df_col, stream_key) in stream_map.items():
         if stream_key in streams:
@@ -76,6 +77,18 @@ def generate_activity_report(user_id: str, activity_id: str) -> Optional[pd.Data
     df = df[~df['elapsed_s'].duplicated(keep='last')]
 
     df['speed_kph'] = df['speed_ms'] * 3.6
+
+    # Treat zero power as no data — power meters send 0 for dropouts, not null
+    if 'power_w' in df.columns:
+        df['power_w_valid'] = df['power_w'].where(df['power_w'] > 0)
+    else:
+        df['power_w_valid'] = float('nan')
+
+    # Same for HR — 0 bpm is physiologically impossible, treat as missing
+    if 'hr_bpm' in df.columns:
+        df['hr_bpm_valid'] = df['hr_bpm'].where(df['hr_bpm'] > 0)
+    else:
+        df['hr_bpm_valid'] = float('nan')
 
     if df['power_w'].notna().any():
         max_s = int(df['elapsed_s'].max())
@@ -101,14 +114,22 @@ def generate_activity_report(user_id: str, activity_id: str) -> Optional[pd.Data
 
     agg = df.groupby('interval_idx').agg(
         avg_power_w      = ('power_w',       'mean'),
+        max_power_w      = ('power_w',       'max'),
         norm_power_w     = ('power_w_np',    norm_power),
+        power_data_s     = ('power_w_valid',  'count'),
         avg_hr_bpm       = ('hr_bpm',        'mean'),
         max_hr_bpm       = ('hr_bpm',        'max'),
+        hr_data_s        = ('hr_bpm_valid',   'count'),
         avg_cadence_rpm  = ('cadence_rpm',   'mean'),
         avg_speed_kph    = ('speed_kph',     'mean'),
         avg_gradient_pct = ('gradient_pct',  'mean'),
         elapsed_start_s  = ('elapsed_s',     'min'),
+        moving_time_s    = ('moving',        'sum'),
     ).reset_index()
+
+    # moving_time_s: null if Strava didn't provide the stream (sum of all-NaN = 0, indistinguishable from stopped)
+    if 'moving' not in streams:
+        agg['moving_time_s'] = float('nan')
 
     if df['distance_m'].notna().any():
         dist = df.groupby('interval_idx')['distance_m'].agg(['min', 'max'])
@@ -134,18 +155,20 @@ def generate_activity_report(user_id: str, activity_id: str) -> Optional[pd.Data
     agg['elapsed_min'] = (agg['elapsed_start_s'] // 60).astype(int)
 
     round_map = {
-        'avg_power_w': 0, 'norm_power_w': 0, 'avg_hr_bpm': 0, 'max_hr_bpm': 0,
+        'avg_power_w': 0, 'max_power_w': 0, 'norm_power_w': 0,
+        'avg_hr_bpm': 0, 'max_hr_bpm': 0,
         'avg_cadence_rpm': 0, 'avg_speed_kph': 1, 'avg_gradient_pct': 1,
         'distance_km': 2, 'elevation_gain_m': 0,
+        'moving_time_s': 0, 'power_data_s': 0, 'hr_data_s': 0,
     }
     for col, decimals in round_map.items():
         if col in agg.columns:
             agg[col] = agg[col].round(decimals)
 
     cols = [
-        'interval', 'elapsed_min', 'distance_km',
-        'avg_power_w', 'norm_power_w',
-        'avg_hr_bpm', 'max_hr_bpm',
+        'interval', 'elapsed_min', 'distance_km', 'moving_time_s',
+        'avg_power_w', 'max_power_w', 'norm_power_w', 'power_data_s',
+        'avg_hr_bpm', 'max_hr_bpm', 'hr_data_s',
         'avg_cadence_rpm', 'avg_speed_kph',
         'avg_gradient_pct', 'elevation_gain_m',
     ]

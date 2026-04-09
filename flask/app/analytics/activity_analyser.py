@@ -165,7 +165,8 @@ def analyse_activity(user_id: int, activity_id: int, mode: str = 'structure') ->
     # LLM payload assembly (llm mode)                                          #
     # ---------------------------------------------------------------------- #
     try:
-        llm_payload = _build_llm_payload(activity, identification, metrics_payload)
+        db.session.refresh(analytics)
+        llm_payload = _build_llm_payload(activity, analytics, user_id, identification, metrics_payload)
         result['llm_payload'] = llm_payload
     except Exception as e:
         logger.error(f'analyse_activity() llm payload assembly failed for {activity_id}: {e}')
@@ -175,7 +176,7 @@ def analyse_activity(user_id: int, activity_id: int, mode: str = 'structure') ->
 
 
 def _ensure_base_metrics(activity, analytics, user_id: int, activity_id: int) -> None:
-    """Compute and persist TSS and time-in-zones if not already present."""
+    """Compute and persist TSS, time-in-zones, and power curve if not already present."""
     if not activity.tss:
         logger.info(f"_ensure_base_metrics() TSS missing for {activity_id} — computing")
         activity_tss.calculate_tss(user_id, activity_id)
@@ -185,22 +186,98 @@ def _ensure_base_metrics(activity, analytics, user_id: int, activity_id: int) ->
         logger.info(f"_ensure_base_metrics() time_in_zones missing for {activity_id} — computing")
         activity_power.calculate_power_distribution(user_id, activity_id)
 
+    pc = analytics.power_curve_data
+    if not pc or pc in ('{}', '[]', ''):
+        logger.info(f"_ensure_base_metrics() power_curve missing for {activity_id} — computing")
+        activity_power.calculate_power_curve(user_id, activity_id)
 
-def _build_llm_payload(activity, identification: dict, data: dict) -> dict:
+
+def _duration_label(seconds: int) -> str:
+    """Convert a duration in seconds to a readable label: 15 → '15s', 300 → '5min', 3600 → '1hr', 5400 → '90min'."""
+    if seconds < 60:
+        return f"{seconds}s"
+    elif seconds < 3600 or seconds % 3600 != 0:
+        return f"{seconds // 60}min"
+    else:
+        return f"{seconds // 3600}hr"
+
+
+def _zones_with_pct(zones_dict: dict) -> tuple:
+    """Return (zones_s dict, zones_pct dict) from a {zone_name: seconds} dict."""
+    total = sum(v for v in zones_dict.values() if isinstance(v, (int, float)))
+    pct = {
+        k: round(v / total * 100, 1) if total > 0 else 0.0
+        for k, v in zones_dict.items()
+    }
+    return zones_dict, pct
+
+
+def _pw_hr_decoupling(segments: list) -> float | None:
+    """
+    Aerobic decoupling: difference in Pw:HR ratio between first and second half.
+    Positive = HR drifted up relative to power (fatigue / heat / dehydration).
+    """
+    valid = [s for s in segments if s.get('avg_power_w') and s.get('avg_hr_bpm')]
+    if len(valid) < 4:
+        return None
+    mid = len(valid) // 2
+    first, second = valid[:mid], valid[mid:]
+
+    def _ratio(segs):
+        p = sum(s['avg_power_w'] for s in segs) / len(segs)
+        h = sum(s['avg_hr_bpm'] for s in segs) / len(segs)
+        return p / h if h > 0 else None
+
+    r1, r2 = _ratio(first), _ratio(second)
+    if r1 and r2 and r1 > 0:
+        return round((r1 - r2) / r1 * 100, 1)
+    return None
+
+
+def _build_llm_payload(activity, analytics, user_id: int, identification: dict, data: dict) -> dict:
     """
     Assemble a stripped-down, token-efficient payload for LLM coaching.
     """
     classification = identification.get('classification', {})
     athlete        = identification.get('athlete', {})
     workout_type   = classification.get('workout_type', '')
+    ftp            = athlete.get('ftp')
 
-    secs = int(activity.moving_time or 0)
+    secs = int(activity.elapsed_time or activity.moving_time or 0)
     duration_str = f"{secs // 3600}h {(secs % 3600) // 60}m"
 
-    REP_KEEP   = {'rep_number', 'duration_s', 'avg_power_w', 'avg_hr_bpm', 'hr_at_end_bpm', 'avg_cadence_rpm'}
-    WIA_KEEP   = {'hr_lag_s', 'cadence_drop_pct'}
-    ES_DROP    = {'avg_interval_power_w', 'session_max_power_w', 'avg_end_hr_bpm_last_rep', 'recovery_power_w'}
-    FLAGS_DROP = {'power_fade_flag', 'cadence_collapse_flag', 'insufficient_hr_response_flag', 'late_fatigue_flag'}
+    # ------------------------------------------------------------------ #
+    # Whole-ride metrics                                                    #
+    # ------------------------------------------------------------------ #
+    np_w   = float(activity.weighted_average_watts) if activity.weighted_average_watts else None
+    avg_w  = float(activity.average_watts)          if activity.average_watts          else None
+    vi     = round(np_w / avg_w, 3)                 if np_w and avg_w and avg_w > 0   else None
+    if_val = round(np_w / ftp, 3)                   if np_w and ftp and ftp > 0       else None
+
+    def _ms_to_kph(ms):
+        return round(float(ms) * 3.6, 1) if ms is not None else None
+
+    def _int_or_none(val):
+        return int(round(float(val))) if val is not None else None
+
+    whole_ride_metrics = {
+        'activity_duration_s': int(activity.elapsed_time) if activity.elapsed_time else secs,
+        'moving_time_s':       int(activity.moving_time) if activity.moving_time else None,
+        'power_data_s':        None,  # filled from segments below (endurance) or left null (intervals)
+        'hr_data_s':           None,  # filled from segments below (endurance) or left null (intervals)
+        'avg_power_w':        _int_or_none(activity.average_watts),
+        'normalised_power_w': _int_or_none(activity.weighted_average_watts),
+        'max_power_w':        _int_or_none(activity.max_watts),
+        'avg_hr_bpm':         _int_or_none(activity.average_heartrate),
+        'max_hr_bpm':         _int_or_none(activity.max_heartrate),
+        'avg_cadence_rpm':    _int_or_none(activity.average_cadence),
+        'avg_speed_kph':      _ms_to_kph(activity.average_speed),
+        'max_speed_kph':      _ms_to_kph(activity.max_speed),
+        'elevation_gain_m':   _int_or_none(activity.total_elevation_gain),
+        'variability_index':  vi,
+        'intensity_factor':   if_val,
+        'tss':                round(float(activity.tss), 1) if activity.tss else None,
+    }
 
     payload = {
         'activity': {
@@ -210,15 +287,59 @@ def _build_llm_payload(activity, identification: dict, data: dict) -> dict:
             'duration': duration_str,
         },
         'athlete': {
-            'ftp_w':      athlete.get('ftp'),
+            'ftp_w':      ftp,
             'max_hr_bpm': athlete.get('max_hr'),
         },
-        'whole_ride_metrics': {
-            'normalised_power_w': int(round(float(activity.weighted_average_watts))) if activity.weighted_average_watts else None,
-            'tss':                round(float(activity.tss), 1)                      if activity.tss                   else None,
-        },
-        'classification': classification,
+        'whole_ride_metrics': whole_ride_metrics,
+        'classification':     classification,
     }
+
+    # ------------------------------------------------------------------ #
+    # Power curve                                                           #
+    # ------------------------------------------------------------------ #
+    raw_pc = analytics.power_curve_data
+    if raw_pc and raw_pc not in ('{}', '[]', ''):
+        try:
+            pc_dict = json.loads(raw_pc)
+            # Keys are stored as strings; convert to int for the filter function
+            pc_int  = {int(k): v for k, v in pc_dict.items()}
+            key_pc  = activity_power.get_key_power_curve_durations(pc_int)
+            payload['power_curve'] = [
+                {'duration': _duration_label(k), 'watts': v}
+                for k, v in sorted(key_pc.items())
+            ]
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------ #
+    # Time in power zones (+ percentages)                                   #
+    # ------------------------------------------------------------------ #
+    raw_tiz = analytics.time_in_zones
+    if raw_tiz and raw_tiz not in ('{}', '[]', ''):
+        try:
+            tiz_dict = json.loads(raw_tiz)
+            tiz_s, tiz_pct = _zones_with_pct(tiz_dict)
+            payload['time_in_power_zones_s']   = tiz_s
+            payload['time_in_power_zones_pct'] = tiz_pct
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------ #
+    # Time in HR zones                                                      #
+    # ------------------------------------------------------------------ #
+    hr_zones = activity_power.calculate_hr_distribution(user_id, activity.id)
+    if hr_zones:
+        hr_s, hr_pct = _zones_with_pct(hr_zones)
+        payload['time_in_hr_zones_s']   = hr_s
+        payload['time_in_hr_zones_pct'] = hr_pct
+
+    # ------------------------------------------------------------------ #
+    # Interval session or endurance time-series                             #
+    # ------------------------------------------------------------------ #
+    REP_KEEP   = {'rep_number', 'duration_s', 'avg_power_w', 'avg_hr_bpm', 'hr_at_end_bpm', 'avg_cadence_rpm'}
+    WIA_KEEP   = {'hr_lag_s', 'cadence_drop_pct'}
+    ES_DROP    = {'avg_interval_power_w', 'session_max_power_w', 'avg_end_hr_bpm_last_rep', 'recovery_power_w'}
+    FLAGS_DROP = {'power_fade_flag', 'cadence_collapse_flag', 'insufficient_hr_response_flag', 'late_fatigue_flag'}
 
     if workout_type in ('threshold', 'vo2'):
         reps = []
@@ -243,11 +364,24 @@ def _build_llm_payload(activity, identification: dict, data: dict) -> dict:
         segments = data.get('intervals', [])
         payload['time_series'] = [
             {
-                't_min':       round(seg.get('start_time_s', 0) / 60),
-                'avg_power_w': seg.get('avg_power_w'),
-                'avg_hr_bpm':  seg.get('avg_hr_bpm'),
+                't_min':            seg.get('elapsed_min'),
+                'moving_time_s':    seg.get('moving_time_s'),
+                'avg_power_w':      seg.get('avg_power_w'),
+                'max_power_w':      seg.get('max_power_w'),
+                'norm_power_w':     seg.get('norm_power_w'),
+                'power_data_s':     seg.get('power_data_s'),
+                'avg_hr_bpm':       seg.get('avg_hr_bpm'),
+                'max_hr_bpm':       seg.get('max_hr_bpm'),
+                'hr_data_s':        seg.get('hr_data_s'),
+                'avg_cadence_rpm':  seg.get('avg_cadence_rpm'),
+                'avg_speed_kph':    seg.get('avg_speed_kph'),
+                'avg_gradient_pct': seg.get('avg_gradient_pct'),
+                'elevation_gain_m': seg.get('elevation_gain_m'),
             }
             for seg in segments
         ]
+        whole_ride_metrics['pw_hr_decoupling_pct'] = _pw_hr_decoupling(segments)
+        whole_ride_metrics['power_data_s']         = sum(s.get('power_data_s') or 0 for s in segments)
+        whole_ride_metrics['hr_data_s']            = sum(s.get('hr_data_s')    or 0 for s in segments)
 
     return payload

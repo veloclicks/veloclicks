@@ -71,7 +71,7 @@ def activity_coaching(id):
     if insight:
         return jsonify({'coaching': insight.coach_insight}), 200
 
-    # Generate via Lambda
+    # Get data about the activity to send to LLM
     result = activity_analyser.analyse_activity(user_id, id, mode='llm')
     if not result['success']:
         return jsonify({'error': result['error']}), 500
@@ -80,6 +80,7 @@ def activity_coaching(id):
     if not llm_payload:
         return jsonify({'error': 'Failed to assemble activity data'}), 500
 
+    # invoke the lambda - ie the coach
     function_name = os.environ.get('COACH_LAMBDA_NAME', 'veloclicks-coach')
     client = _get_lambda_client()
     response = client.invoke(
@@ -91,6 +92,8 @@ def activity_coaching(id):
     if not coaching_result.get('success'):
         return jsonify({'error': coaching_result.get('error')}), 500
 
+    
+    # add coaching insight to database
     insight = ActivityInsight(
         activity_id=id,
         user_id=user_id,

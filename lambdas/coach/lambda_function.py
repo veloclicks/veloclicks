@@ -2,13 +2,11 @@ import json
 import logging
 import os
 
+from coaching_prompts import ACTIVITY_COACH_PROMPT
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-
-SYSTEM_PROMPT = """You are an expert cycling coach providing post-activity feedback.
-Be specific, evidence-based, and actionable. Reference the actual numbers provided.
-Keep language direct and encouraging but honest."""
 
 COACHING_PROMPT = """Analyse this cycling activity and provide coaching feedback.
 
@@ -23,9 +21,13 @@ RESPONSE_INSTRUCTIONS = {
     ),
     'detailed': (
         "Provide comprehensive coaching feedback covering: workout quality and execution, "
-        "interval-by-interval analysis where available, pacing and power fade, "
-        "training value, and 2-3 specific actionable recommendations."
+        "pacing and power fade with reference to the time series, terrain correlation, "
+        "any technique flags, and 2-3 specific actionable recommendations."
     ),
+}
+
+_AGENT_PROMPTS = {
+    'activity': ACTIVITY_COACH_PROMPT,
 }
 
 
@@ -33,6 +35,9 @@ def lambda_handler(event, context):
     try:
         llm_payload  = event.get('llm_payload', {})
         detail_level = event.get('detail_level', 'simple')
+        agent        = event.get('agent', 'activity')
+
+        system_prompt = _AGENT_PROMPTS.get(agent, ACTIVITY_COACH_PROMPT)
 
         response_instruction = RESPONSE_INSTRUCTIONS.get(detail_level, RESPONSE_INSTRUCTIONS['simple'])
         prompt = COACHING_PROMPT.format(
@@ -40,7 +45,7 @@ def lambda_handler(event, context):
             response_instruction = response_instruction,
         )
 
-        coaching, token_usage = _call_llm(prompt, detail_level)
+        coaching, token_usage = _call_llm(prompt, system_prompt, detail_level)
         return {'success': True, 'coaching': coaching, 'token_usage': token_usage}
 
     except Exception as e:
@@ -48,7 +53,7 @@ def lambda_handler(event, context):
         return {'success': False, 'error': str(e)}
 
 
-def _call_llm(prompt, detail_level):
+def _call_llm(prompt, system_prompt, detail_level):
     api_key = os.environ.get('ANTHROPIC_API_KEY')
     if not api_key:
         raise ValueError('ANTHROPIC_API_KEY not set')
@@ -61,7 +66,7 @@ def _call_llm(prompt, detail_level):
     response = client.messages.create(
         model      = model,
         max_tokens = max_tokens,
-        system     = SYSTEM_PROMPT,
+        system     = system_prompt,
         messages   = [{'role': 'user', 'content': prompt}],
     )
 

@@ -216,6 +216,49 @@ def calculate_power_distribution(user_id: int, activity_id: int) -> Optional[Dic
         db.session.rollback()
         return None
 
+def calculate_hr_distribution(user_id: int, activity_id: int) -> Optional[Dict[str, int]]:
+    """
+    Calculate time spent in each HR zone for an activity.
+
+    Returns {zone_name: seconds_count}.
+    Not persisted — computed on demand for the LLM payload.
+    """
+    logger.info(f"calculate_hr_distribution for activity {activity_id}")
+    try:
+        streams = get_activity_streams(user_id, activity_id, ['heartrate'])
+        if not streams or 'heartrate' not in streams:
+            logger.warning(f"No HR data available for activity {activity_id}")
+            return {}
+
+        hr_data = streams['heartrate']['data']
+        if not hr_data:
+            return {}
+
+        zones = get_user_zones(user_id, ZoneType.HEART_RATE)
+        if not zones:
+            logger.warning(f"No HR zones configured for user {user_id} - max_hr not set")
+            return {}
+
+        time_in_zones = {zone['name']: 0 for zone in zones}
+
+        for hr in hr_data:
+            if hr is None or hr == 0:
+                continue
+            for zone in zones:
+                min_value = zone.get('min_value', 0)
+                max_value = zone.get('max_value', float('inf'))
+                if min_value <= hr < max_value:
+                    time_in_zones[zone['name']] += 1
+                    break
+
+        logger.info(f"Calculated HR time in zones for activity {activity_id}: {time_in_zones}")
+        return time_in_zones
+
+    except Exception as e:
+        logger.error(f"Error calculating HR time in zones for activity {activity_id}: {str(e)}")
+        return {}
+
+
 #
 # main method for calculating activity power metrics
 #

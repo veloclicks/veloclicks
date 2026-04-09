@@ -37,10 +37,12 @@ from app.models import db
 from app.models.strava import Activity
 from app.models.analytics import ActivityAnalytics
 from app.models.ai_coach import ActivityInsight
+from app.models.training_zone import ZoneType
 from app.analytics import activity_tss, activity_power, activity_report as activity_report_module
 from app.analytics import activity_analyser
 from app.analytics.activity_warmup_finder import detect_warmup
 from app.profile import tools as profile_tools
+from app.profile.training_zones import populate_zones
 from app.ai_coach.routes import _get_lambda_client
 from app.strava.streams import get_activity_streams
 
@@ -61,6 +63,7 @@ def admin():
       calculate-tss        Calculate only TSS for activities
       analyse-activity     Classify and assess an activity (mode=structure|full)
       activity-coach-insights    Generate AI coaching feedback for an activity
+      rebuild-zones        Rebuild training zones for a user (run after zone definition changes)
 
     Use 'flask admin COMMAND --help' for detailed help on each command.
     """
@@ -666,3 +669,42 @@ def analyse_activity(user_id, activity_id, mode, pretty, output_dir):
                     with open(ass_path, 'w', encoding='utf-8') as f:
                         f.write(json.dumps(result['metrics'], indent=indent))
                     click.echo(f"  Metrics written to {ass_path}", err=True)
+
+
+# --------------------------------------------------------------------------------------
+#
+#                              REBUILD TRAINING ZONES
+#
+# --------------------------------------------------------------------------------------
+@admin.command('rebuild-zones')
+@click.option('--user-id', required=True, type=int, help='User ID')
+@with_appcontext
+def rebuild_zones(user_id):
+    """
+    Rebuild training zones for a user using their current FTP and max HR.
+
+    Run this after zone boundary definition changes to ensure stored zones
+    are up to date (contiguous boundaries, round() rounding).
+    """
+    from app.models.user import User
+
+    user = User.query.get(user_id)
+    if not user:
+        click.echo(f"Error: User {user_id} not found", err=True)
+        return
+
+    click.echo(f"Rebuilding zones for user {user_id} ({user.email})")
+
+    if user.ftp:
+        result = populate_zones(user_id, ZoneType.POWER, float(user.ftp))
+        click.echo(f"  Power zones: {result['zones_created']} zones created (FTP={user.ftp}W)")
+    else:
+        click.echo("  Power zones: skipped (FTP not set)")
+
+    if user.max_heart_rate:
+        result = populate_zones(user_id, ZoneType.HEART_RATE, float(user.max_heart_rate))
+        click.echo(f"  HR zones:    {result['zones_created']} zones created (max_hr={user.max_heart_rate}bpm)")
+    else:
+        click.echo("  HR zones: skipped (max_hr not set)")
+
+    click.echo("Done.")
