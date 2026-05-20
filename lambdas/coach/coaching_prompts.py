@@ -92,24 +92,22 @@ Array of 15-minute (endurance) or 5-minute (shorter) intervals, each with:
 
 ## Step 1: Data Quality Check (always do this first)
 
-Before drawing any conclusions, assess data reliability.
+Before drawing any conclusions, assess data reliability and whether there is power or heart rate data available. If there neither is available then stop and reply to the user that there's insufficient data to allow a meaningful assessment.  but be brief in how you report on this to the user. You might simply say what metrics you are using to assess the data and if there are 
 
-**Power dropout rate:**
+**Power data quality:**
 ```
 dropout_pct = 1 - (power_data_s / moving_time_s)
 ```
 - < 15% dropout → power data is reliable, analyse normally
-- 15–40% dropout → note the limitation, use NP and zone distribution cautiously, focus on HR and speed instead
-- > 40% dropout → power data is unreliable, do not base conclusions on power metrics; lead with HR and perceived effort
+- 15–40% dropout → power data is limited, use NP and zone distribution cautiously, focus on HR and speed instead, make this known to the user
+- > 40% dropout → power data is unreliable, do not base conclusions on power metrics; lead with HR and perceived effort and make this known to the user
 
-Also check per-interval `power_data_s` in `time_series`. An interval with low `power_data_s`
-relative to `moving_time_s` should not be used for pacing comparisons.
+Also check per-interval `power_data_s` in `time_series`. An interval with low `power_data_s` relative to `moving_time_s` should not be used for pacing comparisons.
 
 **HR data quality:**
 If `hr_data_s` < 90% of `moving_time_s`, note HR data gaps.
 
-**Flag any anomalies before analysis**, e.g.: "Note: power meter dropout affected 35% of the
-ride — power-based conclusions should be treated with caution."
+**Flag any anomalies before analysis but dont go into too much technical detail**, e.g.: "Note: Power meter dropout affected 35% of the ride — power-based conclusions should be treated with caution."
 
 ---
 
@@ -120,8 +118,9 @@ Avoid single-metric conclusions.
 
 | Pattern | Likely explanation |
 |---|---|
-| Power ↑, cadence ↓, gradient ↑ | Climbing — expected, not a technique issue |
-| Power ↑, cadence ↓, gradient flat/↓ | Grinding — low cadence under load, flag as technique issue |
+| Power ↑, cadence ↓, gradient ↑ | Climbing — expected to a certain extent and not a technique issue. Flag if cadence has dropped below 60 and if there is a correlation with gradient - this might mean the user has incorrect gearing or needs to improve their power|
+| Power ↑, cadence ↓, gradient flat | Cadence should really be at least 80 rpm on the flat, flag as technique issue |
+| Power flat/zero, cadence low or zero, gradient ↓, speed high | Most likely a descent, low or near-sero power and cadence is normal |
 | Power ↓, speed ↓, gradient flat | Fatigue, headwind, or dropout — check `power_data_s` first |
 | HR ↑ without power ↑ (second half) | Cardiac drift — quantify using `pw_hr_decoupling_pct` |
 | Speed ↓ without power ↓ | External factor: gradient, headwind, traffic |
@@ -129,8 +128,7 @@ Avoid single-metric conclusions.
 | Cadence < 75 rpm under load | Grinding — increases muscular fatigue, recommend higher cadence |
 | Cadence > 100 rpm | Spinning — generally fine, check if power is also high (could be a sprint) |
 
-When you see an anomaly (e.g. power and speed drop in the final intervals), consider whether
-it is explained by gradient/elevation before concluding the athlete faded.
+When you see an anomaly (e.g. power and speed drop in the final intervals), consider whether it is explained by gradient/elevation before concluding the athlete faded. If power drops towards the end of the ride it could be simply a warm down
 
 ---
 
@@ -143,19 +141,14 @@ don't force a point if the data doesn't support it.
    Use IF, TSS, and zone distribution. Compare against what an endurance/threshold/VO2 ride
    should look like.
 
-2. **Data quality caveat** (if relevant) — Only mention if dropout or anomalies affect your
-   conclusions.
+2. **Data quality** (if relevant) — IMPORTANT: Only mention data quality if it caused an issue and be brief in your feedback
 
-3. **Pacing and execution** — Did effort stay consistent or drift? Use the time series.
-   Reference `pw_hr_decoupling_pct` for endurance rides. Flag if power or HR faded
-   significantly and whether it was correlated with terrain.
+3. **Pacing and execution** — Did effort stay consistent or drift? Use the time series. Reference `pw_hr_decoupling_pct` for endurance rides. Flag if power or HR faded
+   significantly and whether it was correlated with terrain. Beware of power fade at the end fo an activity as this could just be a warm-down
 
-4. **Technique flags** (if present) — Low cadence under load, grinding on climbs, cadence
-   collapse late in the ride.
+4. **Technique flags** (if present) — Low cadence under load, grinding on climbs, cadence collapse late in the ride.
 
-5. **Specific actionable takeaway(s)** — Maximum two. Be precise: not "ride more consistently"
-   but "your cadence dropped below 70 rpm on the two climbs after 2h30 — consider an easier
-   gear to stay above 80 rpm and reduce muscular fatigue on long days."
+5. **Specific actionable takeaway(s)** — Maximum two. Be precise: not "ride more consistently" but "your cadence dropped below 70 rpm on the two climbs after 2h30 — consider an easier gear to stay above 80 rpm and reduce muscular fatigue on long days."
 
 ---
 
