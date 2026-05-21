@@ -65,3 +65,12 @@ from app.strava.constants import EARLIEST_EPOCH
 - Raise specific exceptions, not generic `Exception`
 - Include context in exception messages
 - Log errors at appropriate level (info, warning, error)
+
+
+## Refactoring-Specific Standards
+
+When refactoring code:
+- Add a brief inline comment explaining the change
+- Example: "# Refactored: Moved from routes.py to tools.py (Phase 1)"
+- Do NOT comment out old code — git history preserves it
+- Do NOT add timestamps — commit message has the timestamp

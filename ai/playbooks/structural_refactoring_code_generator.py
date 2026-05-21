@@ -3,6 +3,7 @@
 Structural Refactoring Code Generator Playbook
 
 Takes an engineer's implementation plan and generates code changes for a specific phase.
+Writes files to disk. You review in VS Code, then commit manually.
 
 Usage:
   python3 structural_refactoring_code_generator.py \
@@ -84,7 +85,8 @@ def build_prompt(agent_name: str, phase: int, context: str, agent_def: str, play
         f"Generate code changes for Phase {phase} only.",
         f"",
         f"Extract Phase {phase} from the engineer's plan and generate all code changes needed.",
-        f"Show before/after diffs for each file modification.",
+        f"For new files, provide complete file content.",
+        f"For modified files, show before/after diffs.",
         f"Be explicit about what's changing and why.",
         f"Follow all coding standards exactly.",
     ])
@@ -149,20 +151,86 @@ def run_playbook(analysis_file: str, phase: int, model: str = "claude-opus-4-6")
         ]
     )
     
-    # Extract and print response
+    # Extract response
     result = response.content[0].text
     print(result)
     
-    # Save to file
+    # Save analysis to output
     output_file = save_analysis(result, phase)
     
+    # Write files to disk
     print("\n" + "="*80)
-    print(f"✅ Code generation complete for Phase {phase}")
-    print(f"📝 Saved to: {output_file}")
-    print("\n⚠️  REVIEW THE CHANGES ABOVE BEFORE COMMITTING")
+    print(f"💾 Writing changes to disk...")
+    print("="*80 + "\n")
+    
+    changes_made = apply_code_changes(result, repo_root)
+    
+    print("\n" + "="*80)
+    print(f"✅ Phase {phase} complete")
+    print(f"📝 Analysis saved to: {output_file}")
+    print(f"📁 Files written: {changes_made['files_created']} created, {changes_made['files_modified']} modified")
+    print("\n👀 Review changes in VS Code, then commit manually:")
+    print("   git add .")
+    print(f"   git commit -m \"Phase {phase}: [description]\"")
     print("="*80)
     
     return result
+
+
+def apply_code_changes(generation_output: str, repo_root: Path) -> dict:
+    """Parse Claude's output and write files to disk."""
+    changes = {'files_created': 0, 'files_modified': 0}
+    
+    lines = generation_output.split('\n')
+    i = 0
+    
+    while i < len(lines):
+        line = lines[i]
+        
+        # Look for CREATE markers
+        if '✓ CREATE:' in line or 'CREATE:' in line:
+            # Extract file path
+            file_path = line.split('CREATE:')[1].strip()
+            
+            # Find the file content (between CREATE and next marker)
+            i += 1
+            content_lines = []
+            
+            while i < len(lines):
+                # Stop at next marker
+                if ('✓ MODIFY:' in lines[i] or '✓ DELETE:' in lines[i] or 
+                    'MODIFY:' in lines[i] or 'DELETE:' in lines[i] or
+                    'Summary of Phase' in lines[i]):
+                    break
+                content_lines.append(lines[i])
+                i += 1
+            
+            # Remove trailing empty lines
+            while content_lines and not content_lines[-1].strip():
+                content_lines.pop()
+            
+            # Write file
+            full_path = repo_root / file_path
+            full_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            content = '\n'.join(content_lines)
+            full_path.write_text(content + '\n', encoding='utf-8')
+            
+            print(f"✓ Created: {file_path}")
+            changes['files_created'] += 1
+            continue
+        
+        # Look for MODIFY markers
+        if '✓ MODIFY:' in line or 'MODIFY:' in line:
+            file_path = line.split('MODIFY:')[1].strip()
+            print(f"⚠️  Modified: {file_path} (apply diffs manually or let Claude handle)")
+            changes['files_modified'] += 1
+            i += 1
+            continue
+        
+        i += 1
+    
+    return changes
 
 
 def save_analysis(analysis: str, phase: int) -> str:
