@@ -185,24 +185,41 @@ def apply_code_changes(generation_output: str, repo_root: Path) -> dict:
     i = 0
     
     while i < len(lines):
-        line = lines[i]
+        line = lines[i].strip()
         
-        # Look for CREATE markers
-        if '✓ CREATE:' in line or 'CREATE:' in line:
-            # Extract file path
-            file_path = line.split('CREATE:')[1].strip()
+        # Look for CREATE markers (more flexible matching)
+        if 'CREATE:' in line and ('✓' in line or line.startswith('CREATE')):
+            # Extract file path - handle various formats
+            if '✓' in line:
+                file_path = line.split('✓')[1].split('CREATE:')[1].strip()
+            else:
+                file_path = line.split('CREATE:')[1].strip()
             
-            # Find the file content (between CREATE and next marker)
+            # Find the file content (next line starts with ``` usually)
             i += 1
             content_lines = []
+            in_code_block = False
             
             while i < len(lines):
-                # Stop at next marker
-                if ('✓ MODIFY:' in lines[i] or '✓ DELETE:' in lines[i] or 
-                    'MODIFY:' in lines[i] or 'DELETE:' in lines[i] or
-                    'Summary of Phase' in lines[i]):
+                current = lines[i]
+                
+                # Check for end markers
+                if any(x in current for x in ['✓ MODIFY:', '✓ DELETE:', 'MODIFY:', 'DELETE:', 'Summary of Phase', '## File']):
                     break
-                content_lines.append(lines[i])
+                
+                # Track code blocks
+                if '```' in current:
+                    in_code_block = not in_code_block
+                    if in_code_block:
+                        i += 1
+                        continue
+                    else:
+                        i += 1
+                        break
+                
+                if in_code_block or (content_lines and current.strip()):
+                    content_lines.append(current)
+                
                 i += 1
             
             # Remove trailing empty lines
@@ -210,23 +227,27 @@ def apply_code_changes(generation_output: str, repo_root: Path) -> dict:
                 content_lines.pop()
             
             # Write file
-            full_path = repo_root / file_path
-            full_path.parent.mkdir(parents=True, exist_ok=True)
+            if file_path and content_lines:
+                full_path = repo_root / file_path
+                full_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                content = '\n'.join(content_lines)
+                full_path.write_text(content + '\n', encoding='utf-8')
+                
+                print(f"✓ Created: {file_path}")
+                changes['files_created'] += 1
             
-            content = '\n'.join(content_lines)
-            full_path.write_text(content + '\n', encoding='utf-8')
-            
-            print(f"✓ Created: {file_path}")
-            changes['files_created'] += 1
             continue
         
         # Look for MODIFY markers
-        if '✓ MODIFY:' in line or 'MODIFY:' in line:
-            file_path = line.split('MODIFY:')[1].strip()
-            print(f"⚠️  Modified: {file_path} (apply diffs manually or let Claude handle)")
+        if 'MODIFY:' in line and ('✓' in line or line.startswith('MODIFY')):
+            if '✓' in line:
+                file_path = line.split('✓')[1].split('MODIFY:')[1].strip()
+            else:
+                file_path = line.split('MODIFY:')[1].strip()
+            
+            print(f"⚠️  Modified: {file_path} (review diffs in output above)")
             changes['files_modified'] += 1
-            i += 1
-            continue
         
         i += 1
     
