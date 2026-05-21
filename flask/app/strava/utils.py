@@ -5,40 +5,30 @@ import math
 import os
 from dotenv import load_dotenv
 
-from flask import Flask, jsonify, Blueprint, request, current_app
+from flask import Flask, jsonify, request, current_app
 import requests
 import logging
 from app.models import db, User, Activity
 from app.common import date_utils
+from app.strava.constants import (
+    EARLIEST_EPOCH,
+    COORDINATE_SAMPLE_RATE,
+    MIN_COORDINATE_POINTS,
+    MAX_COORDINATE_POINTS,
+)
 
 # Load environment variables
 load_dotenv()
-bp = Blueprint("strava", __name__)
 
-# Configuration constants
-SAMPLE_RATE = 5          # Take every Nth point (1-20 recommended)
-MIN_POINTS = 50          # Minimum points to return (don't sample if already small)
-MAX_POINTS = 300         # Maximum points to return (further reduce if needed)
 COORDINATE_PRECISION = 6  # Decimal places for lat/lng (6 = ~1m accuracy)
 DISTANCE_PRECISION = 2    # Decimal places for distance in km
 ELEVATION_PRECISION = 1   # Decimal places for elevation in meters
 
-
 logging.basicConfig(
-    level=logging.INFO,                           # Minimum log level
-    format="%(asctime)s - %(levelname)s - %(message)s",  # Output format
-    datefmt="%Y-%m-%d %H:%M:%S"                   # Timestamp format
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
 )
-
-
-# -------------------------------------------------------------------------------------------
-#                                               Constants
-# -------------------------------------------------------------------------------------------
-# VC_USER_ID              = 1  # DEPRECATED: Should use actual user_id from authentication
-EARLIEST_EPOCH          = 1577836800 # Wednesday, 1 January 2020 00:00:00
-DEFAULT_HISTORY_DAYS    = 60
-# Strava credentials will be accessed from Flask config (resolved from Parameter Store)
-# CLIENT_ID and CLIENT_SECRET accessed via current_app.config in functions
 
 
 
@@ -406,9 +396,9 @@ def get_elevation_profile_data(user_id, activity_id):
         profile_data.append(data_point)
 
     # Apply sampling to reduce data points
-    sample_rate = SAMPLE_RATE
-    min_points = MIN_POINTS
-    max_points = MAX_POINTS
+    sample_rate = COORDINATE_SAMPLE_RATE
+    min_points = MIN_COORDINATE_POINTS
+    max_points = MAX_COORDINATE_POINTS
 
     # Don't sample if already small dataset
     if len(profile_data) <= min_points:

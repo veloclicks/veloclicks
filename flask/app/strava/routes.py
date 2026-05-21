@@ -15,38 +15,21 @@ from app.models import db, User, Activity
 from app.models.user import MembershipType
 from app.common import date_utils
 from . import utils as strava_utils
-
-#bp = Blueprint("strava", __name__)
-strava_bp = Blueprint('strava', __name__, url_prefix='/strava')
-
-EARLIEST_EPOCH          = 1577836800 # Wednesday, 1 January 2020 00:00:00
-
-'''
-    This file only has api endpoint methods, for the grunt work, see check strava_utils.py
-'''
-logging.basicConfig(
-    level=logging.INFO,                           # Minimum log level
-    format="%(asctime)s - %(levelname)s - %(message)s",  # Output format
-    datefmt="%Y-%m-%d %H:%M:%S"                   # Timestamp format
+from app.strava.constants import (
+    EARLIEST_EPOCH,
+    DEFAULT_ACTIVITY_QUERY_DAYS,
+    SYNCH_WINDOW_DAYS,
 )
 
+strava_bp = Blueprint('strava', __name__, url_prefix='/strava')
 
-# -------------------------------------------------------------------------------------------
-#                                               Constants
-# -------------------------------------------------------------------------------------------
-# VC_USER_ID              = 1  # DEPRECATED: Should use actual user_id from authentication
-EARLIEST_EPOCH          = 1577836800 # Wednesday, 1 January 2020 00:00:00
-TWENTY_TWENTY_FOUR_START   = 1704067200
-TWENTY_TWENTY_THREE_START  = 1672531200
-TWENTY_TWENTY_TWO_START    = 1640995200
-TWENTY_TWENTY_ONE_START    = 1609459200
-TWENTY_TWENTY_START        = 1577836800
-TWENTY_NINETEEN_START      = 1546300800
-TWENTY_EIGHTEEN_START      = 1514764800
+FRONTEND_URL = os.getenv('FRONTEND_URL')
 
-DEFAULT_HISTORY_DAYS    = 2800
-SYNCH_WINDOW_DAYS       = 30
-FRONTEND_URL            = os.getenv('FRONTEND_URL')
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
 
 #
 # Gets the user id from the JWT token
@@ -75,26 +58,6 @@ def test():
     return jsonify({'test': 'hello from /strava/test/ in strava.py!'})
 
 
-#
-# Debug catch-all route to see what paths we're receiving
-#
-@strava_bp.route('/', defaults={'path': ''})
-@strava_bp.route('/<path:path>')
-def catch_all(path):
-    print(f"=== CATCH-ALL DEBUG ===")
-    print(f"Received path: '{path}'")
-    print(f"Full request path: {request.path}")
-    print(f"Request URL: {request.url}")
-    print(f"Request args: {request.args}")
-    print(f"Request method: {request.method}")
-    print(f"Blueprint name: {request.blueprint}")
-    print("=====================")
-    return jsonify({
-        'message': f"Caught path: {path}",
-        'full_path': request.path,
-        'args': dict(request.args),
-        'method': request.method
-    })
 
 # -------------------------------------------------------------------------------------------
 #                         Strava Authentication and Permission
@@ -304,7 +267,7 @@ def strava_activities():
     else:
         logging.info('strava_activities() no activities found.')
         now                 = datetime.now()
-        sixtydaysago_epoch  = int((now - timedelta(days=DEFAULT_HISTORY_DAYS)).timestamp())
+        sixtydaysago_epoch  = int((now - timedelta(days=DEFAULT_ACTIVITY_QUERY_DAYS)).timestamp())
         after_epoch         = sixtydaysago_epoch
         before_epoch        = int(now.timestamp())
         activities          = strava_utils.retrieve_strava_activities(user_id, before_epoch, after_epoch)
@@ -324,8 +287,8 @@ def get_all_activities():
     
     print('API ENDPOINT : /strava/all_activities/')
     
-    after_epoch     = TWENTY_TWENTY_TWO_START
-    before_epoch    = TWENTY_TWENTY_FOUR_START
+    after_epoch     = 1640995200  # 2022-01-01
+    before_epoch    = 1704067200  # 2024-01-01
     #before_epoch    = int(datetime.now().timestamp())
     
     user_id = _get_user_id_from_token()
