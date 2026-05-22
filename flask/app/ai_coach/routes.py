@@ -6,29 +6,16 @@ import logging
 import boto3
 import json
 import os
-from flask import jsonify, request, current_app
+from flask import jsonify, request, g
 from app.ai_coach import ai_coach_bp
 from app.models.user import User, MembershipType
 from app.models.strava import Activity
 from app.models.ai_coach import ActivityInsight
 from app.models.db import db
 from app.analytics import activity_analyser
-import jwt
+from app.common.auth import require_auth
 
 logger = logging.getLogger(__name__)
-
-
-def _get_user_id_from_token():
-    """Extract user_id from JWT token in Authorization header."""
-    auth_header = request.headers.get('Authorization')
-    if not auth_header:
-        return None
-    try:
-        token = auth_header.split(' ')[1]
-        payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
-        return payload.get('user_id')
-    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, IndexError):
-        return None
 
 
 def _get_lambda_client():
@@ -43,16 +30,14 @@ def _get_lambda_client():
 
 
 @ai_coach_bp.route("/activity/<int:id>", methods=["GET"])
+@require_auth
 def activity_coaching(id):
     """Return persisted AI coaching insight, or generate and persist one via the coach Lambda."""
     detail_level = request.args.get('detail_level', 'simple')
     if detail_level not in ('simple', 'detailed'):
         return jsonify({"error": "detail_level must be 'simple' or 'detailed'"}), 400
 
-    user_id = _get_user_id_from_token()
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-
+    user_id = g.user_id
     user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
@@ -110,12 +95,10 @@ def activity_coaching(id):
 
 
 @ai_coach_bp.route("/activity/<int:id>/summary", methods=["GET"])
+@require_auth
 def activity_summary(id):
     """Return the JSON activity summary (llm_payload) that would be sent to the coach."""
-    user_id = _get_user_id_from_token()
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-
+    user_id = g.user_id
     user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404

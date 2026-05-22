@@ -11,7 +11,7 @@ from typing import Optional
 
 import pandas as pd
 
-from app.strava.streams import get_activity_streams
+from app.strava.service import get_activity_streams
 
 
 # ============================================================================ #

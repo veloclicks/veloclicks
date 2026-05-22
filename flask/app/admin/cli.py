@@ -44,7 +44,7 @@ from app.analytics.activity_warmup_finder import detect_warmup
 from app.profile import tools as profile_tools
 from app.profile.training_zones import populate_zones
 from app.ai_coach.routes import _get_lambda_client
-from app.strava.streams import get_activity_streams
+from app.strava.service import get_activity_streams
 
 logger = logging.getLogger(__name__)
 

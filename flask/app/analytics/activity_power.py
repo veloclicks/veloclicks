@@ -8,7 +8,7 @@ from app.models.strava import Activity
 from app.models.analytics import ActivityAnalytics
 from app.profile.training_zones import get_user_zones
 from app.models.training_zone import ZoneType
-from app.strava.streams import get_activity_streams
+from app.strava.service import get_activity_streams
 
 logger = logging.getLogger(__name__)
 

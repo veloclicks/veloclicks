@@ -16,3 +16,12 @@ SYNCH_WINDOW_DAYS = 30
 COORDINATE_SAMPLE_RATE = 5
 MIN_COORDINATE_POINTS = 50
 MAX_COORDINATE_POINTS = 300
+
+# Fields extracted from Strava API activity payloads and stored in DB
+ACTIVITY_SUMMARY_FIELDS = [
+    'id', 'name', 'start_date_local', 'start_date', 'type', 'distance',
+    'elapsed_time', 'moving_time', 'average_speed', 'max_speed',
+    'average_watts', 'max_watts', 'weighted_average_watts',
+    'average_heartrate', 'max_heartrate', 'suffer_score',
+    'average_cadence', 'total_elevation_gain', 'elev_low', 'elev_high',
+]

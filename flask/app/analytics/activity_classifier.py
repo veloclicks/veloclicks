@@ -23,7 +23,7 @@ import json
 import logging
 from typing import Optional
 
-from app.strava.streams import get_activity_streams, get_activity_laps
+from app.strava.service import get_activity_streams, get_activity_laps
 from app.analytics.activity_derivations import (
     _NumpyEncoder,
     compute_interval_metrics,

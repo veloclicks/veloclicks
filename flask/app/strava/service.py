@@ -1,18 +1,16 @@
 from datetime import datetime, timedelta
 from calendar import monthrange
 import math
-import time
 import logging
-import requests
 from flask import current_app
 from app.models import db, User, Activity
-from app.common import date_utils
 from app.strava.constants import (
     SYNCH_WINDOW_DAYS,
     COORDINATE_SAMPLE_RATE,
     MIN_COORDINATE_POINTS,
     MAX_COORDINATE_POINTS,
 )
+from app.strava import strava_client
 from . import utils as strava_utils
 
 COORDINATE_PRECISION = 6
@@ -25,19 +23,9 @@ def handle_oauth_callback(user_id, code, redirect_uri):
     client_id = current_app.config.get('STRAVA_CLIENT_ID')
     client_secret = current_app.config.get('STRAVA_CLIENT_SECRET')
 
-    response = requests.post('https://www.strava.com/oauth/token', data={
-        'client_id': client_id,
-        'client_secret': client_secret,
-        'code': code,
-        'grant_type': 'authorization_code',
-        'redirect_uri': redirect_uri,
-    })
-
-    if not response.ok:
-        logging.error(f'Strava token exchange failed: {response.text}')
+    token_data = strava_client.exchange_authorization_code(code, client_id, client_secret, redirect_uri)
+    if not token_data:
         return {'success': False, 'error': 'token_exchange'}
-
-    token_data = response.json()
 
     user = User.query.get(user_id)
     if not user:
@@ -98,49 +86,31 @@ def sync_activities(user_id, before_epoch, after_epoch):
     user = User.query.get(user_id)
     user_ftp = user.ftp if user else None
 
-    page = 1
-    items_per_page = 30
-    theres_more = True
-    url = 'https://www.strava.com/api/v3/athlete/activities/'
-    headers = {'Authorization': f'Bearer {access_token}'}
-    minimal_activities = []
-    new_activities_count = 0
+    raw_activities = strava_client.fetch_activities(access_token, before_epoch, after_epoch)
+    if raw_activities is None:
+        return None
 
-    while theres_more:
-        params = {'after': after_epoch, 'before': before_epoch, 'page': page, 'per_page': items_per_page}
-        try:
-            response = requests.get(url, headers=headers, params=params)
-            if response.status_code == 200:
-                activities = response.json()
-                num_items = len(activities)
-                if num_items < items_per_page:
-                    theres_more = False
-                for activity in activities:
-                    minimal_attrs = strava_utils._get_key_activity_attributes(user_id, activity)
-                    activity_id = activity['id']
-                    minimal_activities.append(minimal_attrs)
-                    if not db.session.query(Activity).filter_by(id=activity_id).first():
-                        minimal_attrs['ftp'] = user_ftp
-                        db.session.add(Activity(**minimal_attrs))
-                        db.session.commit()
-                        new_activities_count += 1
-                        logging.info(f" - {minimal_attrs['name']} on {minimal_attrs['start_date_local']} written to db.")
-                    else:
-                        logging.debug(f" - {minimal_attrs['name']} already stored.")
-                page += 1
-            else:
-                logging.error(f"Failed to fetch activities: {response.json()}")
-                return None
-        except Exception as e:
-            logging.error(f"Failed to fetch activities: {e}")
-            return None
-        time.sleep(2)
+    processed = []
+    new_count = 0
 
-    logging.info(f"sync_activities() complete. Processed: {len(minimal_activities)}, New: {new_activities_count}")
+    for activity in raw_activities:
+        minimal_attrs = strava_utils._get_key_activity_attributes(user_id, activity)
+        processed.append(minimal_attrs)
+        activity_id = activity['id']
+        if not db.session.query(Activity).filter_by(id=activity_id).first():
+            minimal_attrs['ftp'] = user_ftp
+            db.session.add(Activity(**minimal_attrs))
+            db.session.commit()
+            new_count += 1
+            logging.info(f" - {minimal_attrs['name']} on {minimal_attrs['start_date_local']} written to db.")
+        else:
+            logging.debug(f" - {minimal_attrs['name']} already stored.")
+
+    logging.info(f"sync_activities() complete. Processed: {len(processed)}, New: {new_count}")
     return {
-        'activities': minimal_activities,
-        'new_count': new_activities_count,
-        'total_processed': len(minimal_activities),
+        'activities': processed,
+        'new_count': new_count,
+        'total_processed': len(processed),
     }
 
 
@@ -170,6 +140,7 @@ def sync_activities_by_month(user_id, year, month=None):
         else:
             month_results[current_month] = {'error': 'Failed to retrieve activities'}
 
+        import time
         if month is None and current_month != months_to_process[-1]:
             time.sleep(5)
 
@@ -191,12 +162,32 @@ def get_stored_activities(user_id, start_date=None, end_date=None):
     return query.order_by(Activity.start_date.desc()).all()
 
 
+def get_activity_streams(user_id, activity_id, stream_types=None):
+    """Get activity streams from Strava, handling token refresh."""
+    if stream_types is None:
+        stream_types = ['latlng']
+    access_token = strava_utils.get_access_token(user_id)
+    if not access_token:
+        return None
+    return strava_client.fetch_streams(access_token, activity_id, stream_types)
+
+
+def get_activity_laps(user_id, activity_id):
+    """Get lap data from Strava, handling token refresh."""
+    access_token = strava_utils.get_access_token(user_id)
+    if not access_token:
+        return None
+    return strava_client.fetch_laps(access_token, activity_id)
+
+
 def get_elevation_profile(user_id, activity_id):
     """Get optimized elevation profile data with coordinate sampling."""
-    from app.strava.streams import get_activity_streams
+    access_token = strava_utils.get_access_token(user_id)
+    if not access_token:
+        return None
 
-    streams_data = get_activity_streams(
-        user_id, activity_id, ['latlng', 'altitude', 'heartrate', 'watts', 'grade_smooth']
+    streams_data = strava_client.fetch_streams(
+        access_token, activity_id, ['latlng', 'altitude', 'heartrate', 'watts', 'grade_smooth']
     )
 
     if not streams_data or 'latlng' not in streams_data or 'altitude' not in streams_data:

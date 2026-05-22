@@ -3,8 +3,8 @@ import os
 import logging
 from dotenv import load_dotenv
 
-from flask import jsonify, Blueprint, request, current_app, redirect
-import jwt
+from flask import jsonify, Blueprint, request, g, redirect
+from app.common.auth import require_auth
 
 load_dotenv()
 from app.models import db, User, Activity
@@ -22,25 +22,10 @@ logging.basicConfig(
 )
 
 
-def _get_user_id_from_token():
-    auth_header = request.headers.get('Authorization')
-    if not auth_header:
-        return None
-    try:
-        token = auth_header.split(' ')[1]
-        payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
-        return payload['user_id']
-    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, IndexError):
-        return None
-
-
 # -------------------------------------------------------------------------------------------
 #                         Strava Authentication and Permission
 # -------------------------------------------------------------------------------------------
 @strava_bp.route('/strava_auth/', methods=['POST', 'GET'])
-@strava_bp.route('/strava_auth', methods=['POST', 'GET'])
-@strava_bp.route('/auth/', methods=['POST', 'GET'])
-@strava_bp.route('/auth', methods=['POST', 'GET'])
 def strava_auth():
     error = request.args.get('error')
     if error:
@@ -70,12 +55,9 @@ def strava_auth():
 #                         Sync — incremental sync from last_synch_epoch
 # -------------------------------------------------------------------------------------------
 @strava_bp.route('/synch/')
+@require_auth
 def strava_synch():
-    user_id = _get_user_id_from_token()
-    if not user_id:
-        return jsonify({"error": "Authentication required", "success": False}), 401
-
-    sync_result = service.perform_incremental_sync(user_id)
+    sync_result = service.perform_incremental_sync(g.user_id)
 
     if sync_result is None:
         return jsonify({"error": "Failed to fetch activities", "success": False})
@@ -92,11 +74,8 @@ def strava_synch():
 #                         Activities — return stored activities with optional year filter
 # -------------------------------------------------------------------------------------------
 @strava_bp.route('/activities/')
+@require_auth
 def strava_activities():
-    user_id = _get_user_id_from_token()
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-
     years_param = request.args.get('years')
 
     if years_param:
@@ -111,7 +90,7 @@ def strava_activities():
         start_date = now - timedelta(days=180)
         end_date = now
 
-    activities = service.get_stored_activities(user_id, start_date, end_date)
+    activities = service.get_stored_activities(g.user_id, start_date, end_date)
     return jsonify([a.to_dict() for a in activities])
 
 
@@ -119,15 +98,12 @@ def strava_activities():
 #                         Bulk historical sync (hardcoded 2022–2024 window)
 # -------------------------------------------------------------------------------------------
 @strava_bp.route('/strava/all_activities/')
+@require_auth
 def get_all_activities():
-    user_id = _get_user_id_from_token()
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-
     after_epoch = 1640995200   # 2022-01-01
     before_epoch = 1704067200  # 2024-01-01
 
-    result = service.sync_activities(user_id, before_epoch, after_epoch)
+    result = service.sync_activities(g.user_id, before_epoch, after_epoch)
     if result is not None:
         return jsonify(result)
     return jsonify({"error": "Failed to fetch activities"})
@@ -137,12 +113,9 @@ def get_all_activities():
 #                         Get activity by id
 # -------------------------------------------------------------------------------------------
 @strava_bp.route("/activity/<int:id>", methods=["GET"])
+@require_auth
 def activity(id):
-    user_id = _get_user_id_from_token()
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-
-    activity = Activity.query.filter_by(id=id, user_id=user_id).first()
+    activity = Activity.query.filter_by(id=id, user_id=g.user_id).first()
     if not activity:
         return jsonify({'error': 'Activity not found'}), 404
 
@@ -153,15 +126,10 @@ def activity(id):
 #                         Get activity streams by id
 # -------------------------------------------------------------------------------------------
 @strava_bp.route("/activity/<int:id>/streams", methods=["GET"])
+@require_auth
 def activity_streams(id):
-    user_id = _get_user_id_from_token()
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-
     stream_types = request.args.get('types', 'latlng').split(',')
-
-    from app.strava.streams import get_activity_streams
-    streams_data = get_activity_streams(user_id, id, stream_types)
+    streams_data = service.get_activity_streams(g.user_id, id, stream_types)
 
     if streams_data is None:
         return jsonify({'error': 'Failed to retrieve activity streams or no stream data available'}), 404
@@ -173,12 +141,9 @@ def activity_streams(id):
 #                         Get optimized elevation profile
 # -------------------------------------------------------------------------------------------
 @strava_bp.route("/activity/<int:id>/elevation-profile", methods=["GET"])
+@require_auth
 def activity_elevation_profile(id):
-    user_id = _get_user_id_from_token()
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-
-    profile_data = service.get_elevation_profile(user_id, id)
+    profile_data = service.get_elevation_profile(g.user_id, id)
 
     if profile_data is None:
         return jsonify({'error': 'Failed to retrieve elevation profile data or no stream data available'}), 404
@@ -190,12 +155,9 @@ def activity_elevation_profile(id):
 #                         Update RPE for a single activity
 # -------------------------------------------------------------------------------------------
 @strava_bp.route("/activity/<int:id>/rpe", methods=["PUT"])
+@require_auth
 def update_activity_rpe(id):
-    user_id = _get_user_id_from_token()
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-
-    activity = Activity.query.filter_by(id=id, user_id=user_id).first()
+    activity = Activity.query.filter_by(id=id, user_id=g.user_id).first()
     if not activity:
         return jsonify({'error': 'Activity not found'}), 404
 
@@ -220,16 +182,13 @@ def update_activity_rpe(id):
 #                         Bulk update RPE for multiple activities
 # -------------------------------------------------------------------------------------------
 @strava_bp.route("/activities/rpe", methods=["PUT"])
+@require_auth
 def bulk_update_activities_rpe():
-    user_id = _get_user_id_from_token()
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-
     data = request.get_json()
     if not data or 'updates' not in data:
         return jsonify({'error': 'Missing "updates" field in request body'}), 400
 
-    result = service.update_rpe(user_id, data['updates'])
+    result = service.update_rpe(g.user_id, data['updates'])
 
     if result['success']:
         return jsonify({'message': result['message'], 'count': result['count']}), 200
@@ -240,19 +199,16 @@ def bulk_update_activities_rpe():
 #                         Calculate power metrics for activity
 # -------------------------------------------------------------------------------------------
 @strava_bp.route("/activity/<int:id>/calculate-power-metrics", methods=["POST"])
+@require_auth
 def calculate_activity_power_metrics_endpoint(id):
-    user_id = _get_user_id_from_token()
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-
-    activity = Activity.query.filter_by(id=id, user_id=user_id).first()
+    activity = Activity.query.filter_by(id=id, user_id=g.user_id).first()
     if not activity:
         return jsonify({'error': 'Activity not found'}), 404
 
     from app.analytics.activity_power import calculate_power_metrics
 
     try:
-        result = calculate_power_metrics(user_id, id)
+        result = calculate_power_metrics(g.user_id, id)
         power_curve_available = result['power_curve'] is not None and len(result['power_curve']) > 0
         time_in_zones_available = result['time_in_zones'] is not None and len(result['time_in_zones']) > 0
 
@@ -279,19 +235,16 @@ def calculate_activity_power_metrics_endpoint(id):
 #                         Calculate TSS for activity
 # -------------------------------------------------------------------------------------------
 @strava_bp.route("/activity/<int:id>/calculate-tss", methods=["POST"])
+@require_auth
 def calculate_activity_tss_endpoint(id):
-    user_id = _get_user_id_from_token()
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-
-    activity = Activity.query.filter_by(id=id, user_id=user_id).first()
+    activity = Activity.query.filter_by(id=id, user_id=g.user_id).first()
     if not activity:
         return jsonify({'error': 'Activity not found'}), 404
 
     from app.analytics.activity_tss import calculate_tss
 
     try:
-        tss = calculate_tss(user_id, id)
+        tss = calculate_tss(g.user_id, id)
 
         if tss is None:
             return jsonify({
@@ -318,12 +271,9 @@ def calculate_activity_tss_endpoint(id):
 #                         Monthly sync (Premium only)
 # -------------------------------------------------------------------------------------------
 @strava_bp.route("/monthly_synch", methods=["GET"])
+@require_auth
 def monthly_synch():
-    user_id = _get_user_id_from_token()
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-
-    user = User.query.get(user_id)
+    user = User.query.get(g.user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
 
@@ -355,7 +305,7 @@ def monthly_synch():
         except ValueError:
             return jsonify({"error": "Month must be a valid integer"}), 400
 
-    result = service.sync_activities_by_month(user_id, year, month_int)
+    result = service.sync_activities_by_month(g.user_id, year, month_int)
 
     if result:
         return jsonify({

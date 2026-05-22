@@ -4,7 +4,7 @@ from typing import Optional
 
 from app.models import db
 from app.models.strava import Activity
-from app.strava.streams import get_activity_streams
+from app.strava.service import get_activity_streams
 
 logger = logging.getLogger(__name__)
 
