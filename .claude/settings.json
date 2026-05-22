@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p /Users/patrick/dev/veloclicks/ai/playbooks/structural_refactoring)",
+      "Bash(git rm *)"
+    ],
+    "additionalDirectories": [
+      "/Users/patrick/dev/veloclicks/ai/playbooks"
+    ]
+  }
+}
