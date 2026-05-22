@@ -1,25 +1,15 @@
-from datetime import datetime, timedelta, date
-import time
-import json
+from datetime import datetime, timedelta
 import os
+import logging
 from dotenv import load_dotenv
 
-from flask import Flask, jsonify, Blueprint, request, current_app, redirect
-import requests
-import logging
+from flask import jsonify, Blueprint, request, current_app, redirect
 import jwt
 
-# Load environment variables
 load_dotenv()
 from app.models import db, User, Activity
 from app.models.user import MembershipType
-from app.common import date_utils
-from . import utils as strava_utils
-from app.strava.constants import (
-    EARLIEST_EPOCH,
-    DEFAULT_ACTIVITY_QUERY_DAYS,
-    SYNCH_WINDOW_DAYS,
-)
+from app.strava import service
 
 strava_bp = Blueprint('strava', __name__, url_prefix='/strava')
 
@@ -31,16 +21,11 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S"
 )
 
-#
-# Gets the user id from the JWT token
-#
-def _get_user_id_from_token():
-    """Extract user ID from JWT token in Authorization header"""
-    auth_header = request.headers.get('Authorization')
 
+def _get_user_id_from_token():
+    auth_header = request.headers.get('Authorization')
     if not auth_header:
         return None
-
     try:
         token = auth_header.split(' ')[1]
         payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
@@ -49,281 +34,115 @@ def _get_user_id_from_token():
         return None
 
 
-#
-# Test method
-#
-@strava_bp.route('/test/', methods=['POST', 'GET'])
-def test():
-    print('/test api')
-    return jsonify({'test': 'hello from /strava/test/ in strava.py!'})
-
-
-
 # -------------------------------------------------------------------------------------------
 #                         Strava Authentication and Permission
 # -------------------------------------------------------------------------------------------
-# 1. react (activities.js) redirects the user to strava to provide authentication
-# 2. after slecting the permissions, strava redirects to this url with a short-lived token
-# 3. we then send this token back to strava, alongside our secrret key
-# 4. strava then returns a longer-life authentication token for that user and a refresh token
-# 5. these are saved to the database
-#
 @strava_bp.route('/strava_auth/', methods=['POST', 'GET'])
-@strava_bp.route('/strava_auth', methods=['POST', 'GET'])  # without trailing slash
-@strava_bp.route('/auth/', methods=['POST', 'GET'])  # shorter path
-@strava_bp.route('/auth', methods=['POST', 'GET'])   # shorter path without slash
+@strava_bp.route('/strava_auth', methods=['POST', 'GET'])
+@strava_bp.route('/auth/', methods=['POST', 'GET'])
+@strava_bp.route('/auth', methods=['POST', 'GET'])
 def strava_auth():
-    print('>>>>>>>> [print] /strava_auth OAuth callback received')
-    logging.debug('>>>>>>>> [debug] /strava_auth OAuth callback received')
-
-    # Handle OAuth errors from Strava
     error = request.args.get('error')
     if error:
-        logging.error(f'>>>>>>>> Strava OAuth error: {error}')
-        frontend_url = FRONTEND_URL
-        return redirect(f"{frontend_url}/profile/strava-connect?error=access_denied")
+        return redirect(f"{FRONTEND_URL}/profile/strava-connect?error=access_denied")
 
-    # Get authorization code and user state
-    logging.debug('>>>>>>>> [debug] /strava_auth extracting code and state')
     code = request.args.get('code')
-    state = request.args.get('state')  # user_id
+    state = request.args.get('state')
 
     if not code or not state:
-        logging.error('>>>>>>>> Missing code or state parameter')
-        frontend_url = FRONTEND_URL
-        return redirect(f"{frontend_url}/profile/strava-connect?error=missing_params")
+        return redirect(f"{FRONTEND_URL}/profile/strava-connect?error=missing_params")
+
+    redirect_uri = f"{request.url_root.rstrip('/')}/strava/strava_auth/"
 
     try:
-        # Get Strava credentials from config
-        client_id = current_app.config.get('STRAVA_CLIENT_ID')
-        client_secret = current_app.config.get('STRAVA_CLIENT_SECRET')
-        
-        logging.debug('>>>>>>>> [debug] /strava_auth client id', client_id)
-
-        # Exchange code for tokens with correct redirect URI
-        redirect_uri = f"{request.url_root.rstrip('/')}/strava/strava_auth/"
-        response = requests.post('https://www.strava.com/oauth/token', data={
-            'client_id': client_id,
-            'client_secret': client_secret,
-            'code': code,
-            'grant_type': 'authorization_code',
-            'redirect_uri': redirect_uri
-        })
-
-        if not response.ok:
-            logging.error(f'>>>>>>>> Strava token exchange failed: {response.text}')
-            frontend_url = FRONTEND_URL
-            return redirect(f"{frontend_url}/profile/strava-connect?error=token_exchange")
-
-        token_data = response.json()
-
-        access_token = token_data.get('access_token')
-        refresh_token = token_data.get('refresh_token')
-        expires_at = token_data.get('expires_at')
-
-        # Store tokens for the user
-        user = User.query.get(int(state))
-        if not user:
-            logging.error(f'>>>>>>>> User with id {state} not found')
-            frontend_url = FRONTEND_URL
-            return redirect(f"{frontend_url}/profile/strava-connect?error=user_not_found")
-
-        user.strava_access_token = access_token
-        user.strava_refresh_token = refresh_token
-        user.token_expiry_epoch = expires_at
-        db.session.commit()
-
+        result = service.handle_oauth_callback(int(state), code, redirect_uri)
     except Exception as e:
-        logging.error(f'>>>>>>>> Exception in strava_auth: {e}')
-        frontend_url = FRONTEND_URL
-        return redirect(f"{frontend_url}/profile/strava-connect?error=connection_failed")
+        logging.error(f'Exception in strava_auth: {e}')
+        return redirect(f"{FRONTEND_URL}/profile/strava-connect?error=connection_failed")
 
-    print(f'>>>>>> Strava tokens saved for user {state}, starting activity sync...')
+    if not result['success']:
+        return redirect(f"{FRONTEND_URL}/profile/strava-connect?error={result['error']}")
 
-    # Sync the last 30 days activities
-    now = datetime.now()
-    before_epoch = int(now.timestamp())
-    after_epoch = int((now - timedelta(days=30)).timestamp())
-
-    activity_count = 0
-    try:
-        sync_result = strava_utils.retrieve_strava_activities(int(state), before_epoch, after_epoch)
-        activity_count = sync_result.get('new_count', 0) if sync_result else 0
-
-        # Update last_synch_epoch after successful initial sync
-        if sync_result:
-            user.last_synch_epoch = before_epoch
-            db.session.commit()
-            logging.info(f'Successfully synced {activity_count} new activities for user {state}, updated last_synch_epoch')
-        else:
-            logging.info(f'Successfully synced {activity_count} new activities for user {state}')
-    except Exception as e:
-        logging.error(f'Failed to sync activities for user {state}: {e}')
-        # Continue anyway - user is connected even if sync failed
-
-    # Redirect to activities page with success message
-    frontend_url = FRONTEND_URL
-    return redirect(f"{frontend_url}/activities?strava_connected=true&activities={activity_count}")
-
+    return redirect(f"{FRONTEND_URL}/activities?strava_connected=true&activities={result['activity_count']}")
 
 
 # -------------------------------------------------------------------------------------------
-#         synch - This will return the latest 60 days activities
+#                         Sync — incremental sync from last_synch_epoch
 # -------------------------------------------------------------------------------------------
 @strava_bp.route('/synch/')
 def strava_synch():
-    print(f"API ENDPOINT : /synch strava_synch() - syncing activities")
-
     user_id = _get_user_id_from_token()
     if not user_id:
         return jsonify({"error": "Authentication required", "success": False}), 401
 
-    now = datetime.now()
-    before_epoch = int(now.timestamp())
+    sync_result = service.perform_incremental_sync(user_id)
 
-    # get user info
-    user = User.query.get(user_id)
-    if not user:
-        return f"No user with id {user_id} found."
+    if sync_result is None:
+        return jsonify({"error": "Failed to fetch activities", "success": False})
 
-    # Calculate default sync window
-    default_synch_from = int((now - timedelta(days=SYNCH_WINDOW_DAYS)).timestamp())
+    return jsonify({
+        "success": True,
+        "new_activities": sync_result['new_count'],
+        "total_processed": sync_result['total_processed'],
+        "message": f"Sync completed. {sync_result['new_count']} new activities added out of {sync_result['total_processed']} processed.",
+    })
 
-    # Use the most recent of: last_synch_epoch OR default window
-    if user.last_synch_epoch:
-        after_epoch = max(user.last_synch_epoch, default_synch_from)
-        print(f"Using last_synch_epoch: {user.last_synch_epoch} (max with default: {after_epoch})")
-    else:
-        after_epoch = default_synch_from
-        print(f"No last_synch_epoch found, using default {SYNCH_WINDOW_DAYS} day window")
-
-    # get the latest activities and save to db
-    sync_result = strava_utils.retrieve_strava_activities(user_id, before_epoch, after_epoch)
-
-    if sync_result is not None:
-        # Update last_synch_epoch to current time
-        user.last_synch_epoch = before_epoch
-        db.session.commit()
-        print(f"Updated last_synch_epoch to {before_epoch}")
-
-        return jsonify({
-            "success": True,
-            "new_activities": sync_result['new_count'],
-            "total_processed": sync_result['total_processed'],
-            "message": f"Sync completed. {sync_result['new_count']} new activities added out of {sync_result['total_processed']} processed."
-        })
-    else:
-        return jsonify({ "error": "Failed to fetch activities", "success": False})
-    
 
 # -------------------------------------------------------------------------------------------
-#         synch - This will return the activities in the database
+#                         Activities — return stored activities with optional year filter
 # -------------------------------------------------------------------------------------------
 @strava_bp.route('/activities/')
 def strava_activities():
-    logging.info('API ENDPOINT : /activities')
-
     user_id = _get_user_id_from_token()
     if not user_id:
         return jsonify({"error": "Authentication required"}), 401
 
-    # Get years from query parameters (e.g., ?years=2023,2024)
     years_param = request.args.get('years')
 
     if years_param:
-        # Parse years from query parameter
         try:
-            selected_years = [int(year.strip()) for year in years_param.split(',')]
-            logging.info(f"strava_activities() - filtering for years: {selected_years}")
-
-            # Calculate date range from selected years
-            min_year = min(selected_years)
-            max_year = max(selected_years)
-            start_date = datetime(min_year, 1, 1)
-            end_date = datetime(max_year, 12, 31, 23, 59, 59)
-        except (ValueError, TypeError) as e:
-            logging.error(f"Invalid years parameter: {years_param}, error: {e}")
+            selected_years = [int(y.strip()) for y in years_param.split(',')]
+            start_date = datetime(min(selected_years), 1, 1)
+            end_date = datetime(max(selected_years), 12, 31, 23, 59, 59)
+        except (ValueError, TypeError):
             return jsonify({"error": "Invalid years parameter"}), 400
     else:
-        # Default to last 6 months
         now = datetime.now()
-        start_date = now - timedelta(days=180)  # 6 months
+        start_date = now - timedelta(days=180)
         end_date = now
-        logging.info(f"strava_activities() - using default 6 month range")
 
-    # get user info
-    user = User.query.get(user_id)
-    if not user:
-        return f"No user with id {user_id} found."
-
-    # get activities from db with date filtering
-    logging.info(f"strava_activities() - looking for activities for user {user_id} from {start_date} to {end_date}")
-    activities = strava_utils._retrieve_stored_activities(user_id, start_date, end_date)
-
-    if activities is not None:
-        #return jsonify(activities)
-        logging.info('jsonifying activities...')
-        return jsonify([a.to_dict() for a in activities])
-    else:
-        logging.info('strava_activities() no activities found.')
-        now                 = datetime.now()
-        sixtydaysago_epoch  = int((now - timedelta(days=DEFAULT_ACTIVITY_QUERY_DAYS)).timestamp())
-        after_epoch         = sixtydaysago_epoch
-        before_epoch        = int(now.timestamp())
-        activities          = strava_utils.retrieve_strava_activities(user_id, before_epoch, after_epoch)
-        return jsonify({ "error": "Failed to fetch activities from db"})
+    activities = service.get_stored_activities(user_id, start_date, end_date)
+    return jsonify([a.to_dict() for a in activities])
 
 
 # -------------------------------------------------------------------------------------------
-#   Get Activities - This will retreive all activities since 2024 and store them in db
-#
-#   This is not called from the REACT front end but can be called from a url
-#
-#   127.0.0.1:5000/strava/all_activities
-#
+#                         Bulk historical sync (hardcoded 2022–2024 window)
 # -------------------------------------------------------------------------------------------
-@strava_bp.route('/strava/all_activities/') 
+@strava_bp.route('/strava/all_activities/')
 def get_all_activities():
-    
-    print('API ENDPOINT : /strava/all_activities/')
-    
-    after_epoch     = 1640995200  # 2022-01-01
-    before_epoch    = 1704067200  # 2024-01-01
-    #before_epoch    = int(datetime.now().timestamp())
-    
     user_id = _get_user_id_from_token()
     if not user_id:
         return jsonify({"error": "Authentication required"}), 401
-    
-    # get user info
-    user = User.query.get(user_id)
-    if not user:
-        return f"No user with id {user_id} found."
-    
-    # get the latest activities and save to db
-    minimal_activities = strava_utils.retrieve_strava_activities(user_id, before_epoch, after_epoch)
 
-    if minimal_activities is not None:
-        return jsonify(minimal_activities)
-    else:
-        return jsonify({ "error": "Failed to fetch activities"})
+    after_epoch = 1640995200   # 2022-01-01
+    before_epoch = 1704067200  # 2024-01-01
+
+    result = service.sync_activities(user_id, before_epoch, after_epoch)
+    if result is not None:
+        return jsonify(result)
+    return jsonify({"error": "Failed to fetch activities"})
+
 
 # -------------------------------------------------------------------------------------------
-#                                   Get activity by id
+#                         Get activity by id
 # -------------------------------------------------------------------------------------------
-# http://127.0.0.1:5000/strava/activity/0001
 @strava_bp.route("/activity/<int:id>", methods=["GET"])
 def activity(id):
-
-    logging.info(f"API ENDPOINT : /strava/activity/ received id: {id}")
-
     user_id = _get_user_id_from_token()
     if not user_id:
         return jsonify({"error": "Authentication required"}), 401
 
-    # Get activity by ID and user_id for security
     activity = Activity.query.filter_by(id=id, user_id=user_id).first()
-
     if not activity:
         return jsonify({'error': 'Activity not found'}), 404
 
@@ -331,22 +150,16 @@ def activity(id):
 
 
 # -------------------------------------------------------------------------------------------
-#                                   Get activity streams by id
+#                         Get activity streams by id
 # -------------------------------------------------------------------------------------------
-# http://127.0.0.1:5002/strava/activity/123456/streams
 @strava_bp.route("/activity/<int:id>/streams", methods=["GET"])
 def activity_streams(id):
-
-    logging.info(f"API ENDPOINT : /strava/activity/{id}/streams")
-
     user_id = _get_user_id_from_token()
     if not user_id:
         return jsonify({"error": "Authentication required"}), 401
 
-    # Get stream types from query parameters, default to latlng
     stream_types = request.args.get('types', 'latlng').split(',')
 
-    # Get streams from Strava API
     from app.strava.streams import get_activity_streams
     streams_data = get_activity_streams(user_id, id, stream_types)
 
@@ -357,20 +170,15 @@ def activity_streams(id):
 
 
 # -------------------------------------------------------------------------------------------
-#                           Get optimized elevation profile data
+#                         Get optimized elevation profile
 # -------------------------------------------------------------------------------------------
-# http://127.0.0.1:5002/strava/activity/123456/elevation-profile
 @strava_bp.route("/activity/<int:id>/elevation-profile", methods=["GET"])
 def activity_elevation_profile(id):
-
-    logging.info(f"API ENDPOINT : /strava/activity/{id}/elevation-profile")
-
     user_id = _get_user_id_from_token()
     if not user_id:
         return jsonify({"error": "Authentication required"}), 401
 
-    # Get optimized elevation profile data with sampling
-    profile_data = strava_utils.get_elevation_profile_data(user_id, id)
+    profile_data = service.get_elevation_profile(user_id, id)
 
     if profile_data is None:
         return jsonify({'error': 'Failed to retrieve elevation profile data or no stream data available'}), 404
@@ -379,32 +187,21 @@ def activity_elevation_profile(id):
 
 
 # -------------------------------------------------------------------------------------------
-#                           Update RPE (Rate of Perceived Exertion) for activity
+#                         Update RPE for a single activity
 # -------------------------------------------------------------------------------------------
-# http://127.0.0.1:5002/strava/activity/123456/rpe
 @strava_bp.route("/activity/<int:id>/rpe", methods=["PUT"])
 def update_activity_rpe(id):
-    """
-    Update the Rate of Perceived Exertion (RPE) for an activity.
-    RPE should be an integer between 1-10.
-    """
-    logging.info(f"API ENDPOINT : /strava/activity/{id}/rpe")
-
     user_id = _get_user_id_from_token()
     if not user_id:
         return jsonify({"error": "Authentication required"}), 401
 
-    # Get activity by ID and user_id for security
     activity = Activity.query.filter_by(id=id, user_id=user_id).first()
-
     if not activity:
         return jsonify({'error': 'Activity not found'}), 404
 
-    # Get RPE value from request
     data = request.get_json()
     rpe_value = data.get('rpe')
 
-    # Validate RPE value
     if rpe_value is not None:
         try:
             rpe_value = int(rpe_value)
@@ -413,97 +210,56 @@ def update_activity_rpe(id):
         except (ValueError, TypeError):
             return jsonify({'error': 'RPE must be a valid integer'}), 400
 
-    # Update activity RPE
     activity.rpe = rpe_value
     db.session.commit()
 
-    logging.info(f"Updated RPE for activity {id} to {rpe_value}")
-    return jsonify({
-        'message': 'RPE updated successfully',
-        'activity_id': id,
-        'rpe': rpe_value
-    })
+    return jsonify({'message': 'RPE updated successfully', 'activity_id': id, 'rpe': rpe_value})
 
 
 # -------------------------------------------------------------------------------------------
-#                           Bulk update RPE for multiple activities
+#                         Bulk update RPE for multiple activities
 # -------------------------------------------------------------------------------------------
-# http://127.0.0.1:5002/strava/activities/rpe
 @strava_bp.route("/activities/rpe", methods=["PUT"])
 def bulk_update_activities_rpe():
-    """
-    Update RPE for one or more activities in a single transaction.
-    Request body: {"updates": [{"activity_id": 123, "rpe": 7}, ...]}
-    """
-    logging.info(f"API ENDPOINT : /strava/activities/rpe (bulk update)")
-
     user_id = _get_user_id_from_token()
     if not user_id:
         return jsonify({"error": "Authentication required"}), 401
 
-    # Get request data
     data = request.get_json()
     if not data or 'updates' not in data:
         return jsonify({'error': 'Missing "updates" field in request body'}), 400
 
-    updates = data['updates']
+    result = service.update_rpe(user_id, data['updates'])
 
-    # Call utility function
-    result = strava_utils.set_rpe(user_id, updates)
-
-    # Return appropriate response
     if result['success']:
-        return jsonify({
-            'message': result['message'],
-            'count': result['count']
-        }), 200
-    else:
-        return jsonify({
-            'error': result['error'],
-            'message': result['message']
-        }), 400
+        return jsonify({'message': result['message'], 'count': result['count']}), 200
+    return jsonify({'error': result['error'], 'message': result['message']}), 400
 
 
 # -------------------------------------------------------------------------------------------
-#                           Calculate power metrics for activity
+#                         Calculate power metrics for activity
 # -------------------------------------------------------------------------------------------
-# http://127.0.0.1:5002/strava/activity/123456/calculate-power-metrics
 @strava_bp.route("/activity/<int:id>/calculate-power-metrics", methods=["POST"])
 def calculate_activity_power_metrics_endpoint(id):
-    """
-    Calculate power curve and time-in-zones for an activity.
-    This endpoint triggers the calculation and storage of:
-    - Power curve (max average power for various durations)
-    - Time in zones (seconds spent in each power zone)
-    """
-    logging.info(f"API ENDPOINT : /strava/activity/{id}/calculate-power-metrics")
-
     user_id = _get_user_id_from_token()
     if not user_id:
         return jsonify({"error": "Authentication required"}), 401
 
-    # Verify activity exists and belongs to user
     activity = Activity.query.filter_by(id=id, user_id=user_id).first()
     if not activity:
-        logging.error(f"Activity not found : {id}")
         return jsonify({'error': 'Activity not found'}), 404
 
-    # Import the calculation functions
     from app.analytics.activity_power import calculate_power_metrics
 
-    # Calculate power metrics
     try:
         result = calculate_power_metrics(user_id, id)
-
-        # Check if any metrics were calculated (empty dict {} means no data/zones)
         power_curve_available = result['power_curve'] is not None and len(result['power_curve']) > 0
         time_in_zones_available = result['time_in_zones'] is not None and len(result['time_in_zones']) > 0
 
         if not power_curve_available and not time_in_zones_available:
-            logging.warning(f"No power metrics calculated for activity {id} - likely no power data or FTP not configured")
             return jsonify({
                 'error': 'Failed to calculate power metrics',
-                'message': 'No power data available for this activity or FTP not configured in profile'
+                'message': 'No power data available for this activity or FTP not configured in profile',
             }), 404
 
         return jsonify({
@@ -512,49 +268,35 @@ def calculate_activity_power_metrics_endpoint(id):
             'power_curve_calculated': power_curve_available,
             'time_in_zones_calculated': time_in_zones_available,
             'power_curve_points': len(result['power_curve']) if result['power_curve'] else 0,
-            'time_in_zones': result['time_in_zones'] if time_in_zones_available else {}
+            'time_in_zones': result['time_in_zones'] if time_in_zones_available else {},
         })
-
     except Exception as e:
-        logging.error(f"Error calculating power metrics for activity {id}: {str(e)}")
-        return jsonify({
-            'error': 'Failed to calculate power metrics',
-            'message': str(e)
-        }), 500
+        logging.error(f"Error calculating power metrics for activity {id}: {e}")
+        return jsonify({'error': 'Failed to calculate power metrics', 'message': str(e)}), 500
 
 
 # -------------------------------------------------------------------------------------------
-#                           Calculate TSS (Training Stress Score) for activity
+#                         Calculate TSS for activity
 # -------------------------------------------------------------------------------------------
-# http://127.0.0.1:5002/strava/activity/123456/calculate-tss
 @strava_bp.route("/activity/<int:id>/calculate-tss", methods=["POST"])
 def calculate_activity_tss_endpoint(id):
-    """
-    Calculate Training Stress Score (TSS) for an activity based on heart rate data.
-    TSS is calculated using the TRIMP method and normalized to a 0-100+ scale.
-    """
-    logging.info(f"API ENDPOINT : /strava/activity/{id}/calculate-tss")
-
     user_id = _get_user_id_from_token()
     if not user_id:
         return jsonify({"error": "Authentication required"}), 401
 
-    # Verify activity exists and belongs to user
     activity = Activity.query.filter_by(id=id, user_id=user_id).first()
     if not activity:
         return jsonify({'error': 'Activity not found'}), 404
 
-    # Import the calculation function
     from app.analytics.activity_tss import calculate_tss
 
-    # Calculate TSS
     try:
         tss = calculate_tss(user_id, id)
 
         if tss is None:
             return jsonify({
                 'error': 'Failed to calculate TSS',
-                'message': 'Calculation failed or user missing required heart rate data'
+                'message': 'Calculation failed or user missing required heart rate data',
             }), 404
 
         if tss == 0.0:
@@ -562,62 +304,38 @@ def calculate_activity_tss_endpoint(id):
                 'message': 'TSS calculated (no heart rate data available)',
                 'activity_id': id,
                 'tss': 0.0,
-                'note': 'Activity has no heart rate data'
+                'note': 'Activity has no heart rate data',
             }), 200
 
-        return jsonify({
-            'message': 'TSS calculated successfully',
-            'activity_id': id,
-            'tss': tss
-        })
+        return jsonify({'message': 'TSS calculated successfully', 'activity_id': id, 'tss': tss})
 
     except Exception as e:
-        logging.error(f"Error calculating TSS for activity {id}: {str(e)}")
-        return jsonify({
-            'error': 'Failed to calculate TSS',
-            'message': str(e)
-        }), 500
+        logging.error(f"Error calculating TSS for activity {id}: {e}")
+        return jsonify({'error': 'Failed to calculate TSS', 'message': str(e)}), 500
 
 
 # -------------------------------------------------------------------------------------------
-#                   Monthly sync - Retrieve activities by month and year (Premium only)
+#                         Monthly sync (Premium only)
 # -------------------------------------------------------------------------------------------
-# http://127.0.0.1:5002/strava/monthly_synch?year=2024&month=5
-# http://127.0.0.1:5002/strava/monthly_synch?year=2024
 @strava_bp.route("/monthly_synch", methods=["GET"])
 def monthly_synch():
-    """
-    Retrieve Strava activities by month and year.
-    Requires PREMIUM_TIER membership.
-
-    Query Parameters:
-        year (required): Year to sync activities for
-        month (optional): Specific month (1-12). If not provided, syncs all months in the year.
-    """
-    logging.info("API ENDPOINT : /strava/monthly_synch")
-
-    # Get authenticated user
     user_id = _get_user_id_from_token()
     if not user_id:
         return jsonify({"error": "Authentication required"}), 401
 
-    # Get user and check membership type
     user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    # Check if user has premium membership
     if user.membership_type != MembershipType.PREMIUM_TIER:
         return jsonify({
             "error": "Premium membership required",
-            "message": "This feature is only available to premium members. Please upgrade your membership to access historical activity sync."
+            "message": "This feature is only available to premium members. Please upgrade your membership to access historical activity sync.",
         }), 403
 
-    # Get query parameters
     year = request.args.get('year')
     month = request.args.get('month')
 
-    # Validate year parameter (required)
     if not year:
         return jsonify({"error": "Year parameter is required"}), 400
 
@@ -628,7 +346,6 @@ def monthly_synch():
     except ValueError:
         return jsonify({"error": "Year must be a valid integer"}), 400
 
-    # Validate month parameter (optional)
     month_int = None
     if month:
         try:
@@ -638,9 +355,7 @@ def monthly_synch():
         except ValueError:
             return jsonify({"error": "Month must be a valid integer"}), 400
 
-    # Call the strava_utils function to retrieve activities
-    logging.info(f"Syncing activities for user {user_id}, year {year}, month {month_int}")
-    result = strava_utils.retrieve_strava_activities_by_month(user_id, year, month_int)
+    result = service.sync_activities_by_month(user_id, year, month_int)
 
     if result:
         return jsonify({
@@ -649,10 +364,6 @@ def monthly_synch():
             "total_new": result['total_new'],
             "months_processed": result['months_processed'],
             "month_results": result['month_results'],
-            "message": f"Successfully synced {result['total_new']} new activities out of {result['total_activities']} total."
+            "message": f"Successfully synced {result['total_new']} new activities out of {result['total_activities']} total.",
         })
-    else:
-        return jsonify({
-            "error": "Failed to retrieve activities",
-            "success": False
-        }), 500
+    return jsonify({"error": "Failed to retrieve activities", "success": False}), 500
