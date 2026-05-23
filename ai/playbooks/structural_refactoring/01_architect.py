@@ -14,8 +14,8 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from playbook_base import (
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from agent_base import (
     build_prompt, call_claude, load_agent, load_code,
     load_context, load_playbook_section, resolve_dirs, save_output,
 )

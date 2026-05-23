@@ -79,7 +79,9 @@ def load_code(code_paths: list[str], repo_root: Path) -> str:
             parts.append(read_file(path))
         elif path.is_dir():
             parts.append(f"\n## DIRECTORY: {code_path}\n")
-            for file in sorted(path.rglob("*.py")):
+            extensions = ("*.py", "*.js", "*.jsx", "*.ts", "*.tsx")
+            files = sorted(f for ext in extensions for f in path.rglob(ext))
+            for file in files:
                 rel = file.relative_to(repo_root)
                 parts.append(f"\n### {rel}\n")
                 content = read_file(file)
