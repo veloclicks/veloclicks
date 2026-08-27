@@ -58,8 +58,8 @@ def _call_llm(prompt, system_prompt, detail_level):
     if not api_key:
         raise ValueError('ANTHROPIC_API_KEY not set')
 
-    model      = os.environ.get('LLM_MODEL', 'claude-sonnet-4-6-20251101')
-    max_tokens = 800 if detail_level == 'simple' else 2000
+    model      = os.environ.get('LLM_MODEL', 'claude-sonnet-5')
+    max_tokens = 3000 if detail_level == 'simple' else 5000
 
     from anthropic import Anthropic
     client   = Anthropic(api_key=api_key)

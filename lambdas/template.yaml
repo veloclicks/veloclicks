@@ -11,3 +11,34 @@ Resources:
       Runtime: python3.11
       Timeout: 30
       MemorySize: 512
+
+  AuthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: veloclicks-auth
+      CodeUri: auth/
+      Handler: handler.handler
+      Runtime: python3.11
+      Timeout: 10
+      MemorySize: 256
+      Events:
+        Login:
+          Type: Api
+          Properties:
+            Path: /api/login
+            Method: post
+        Register:
+          Type: Api
+          Properties:
+            Path: /api/register
+            Method: post
+        Refresh:
+          Type: Api
+          Properties:
+            Path: /api/refresh
+            Method: post
+        Options:
+          Type: Api
+          Properties:
+            Path: /api/{proxy+}
+            Method: options

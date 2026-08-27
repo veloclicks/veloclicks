@@ -7,7 +7,7 @@ from flask import jsonify, Blueprint, request, g, redirect
 from app.common.auth import require_auth
 
 load_dotenv()
-from app.models import db, User, Activity
+from app.models import db, User, Activity, ActivityAnalytics
 from app.models.user import MembershipType
 from app.strava import service
 
@@ -119,7 +119,14 @@ def activity(id):
     if not activity:
         return jsonify({'error': 'Activity not found'}), 404
 
-    return jsonify(activity.to_dict())
+    data = activity.to_dict()
+
+    analytics = ActivityAnalytics.query.filter_by(activity_id=id, user_id=g.user_id).first()
+    if analytics:
+        data['power_curve_data'] = analytics.power_curve_data
+        data['time_in_zones'] = analytics.time_in_zones
+
+    return jsonify(data)
 
 
 # -------------------------------------------------------------------------------------------

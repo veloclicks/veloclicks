@@ -1,6 +1,6 @@
 'use client';
 import React, { useState } from 'react';
-import { Sparkles, RefreshCw, Lock } from 'lucide-react';
+import { Sparkles, RefreshCw, Lock, Copy, Check } from 'lucide-react';
 
 const AIInsightsSection = ({ activityId, isPremiumUser, colors }) => {
   const [activeTab, setActiveTab] = useState('insight');
@@ -10,6 +10,7 @@ const AIInsightsSection = ({ activityId, isPremiumUser, colors }) => {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [error, setError] = useState(null);
   const [summaryError, setSummaryError] = useState(null);
+  const [copied, setCopied] = useState(false);
 
   const authHeaders = {
     'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
@@ -56,6 +57,16 @@ const AIInsightsSection = ({ activityId, isPremiumUser, colors }) => {
       setSummaryError(err.message);
     } finally {
       setSummaryLoading(false);
+    }
+  };
+
+  const handleCopySummary = async () => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(summary, null, 2));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy summary:', err);
     }
   };
 
@@ -155,12 +166,26 @@ const AIInsightsSection = ({ activityId, isPremiumUser, colors }) => {
               ) : summaryError ? (
                 <p className="text-sm text-red-500 py-4">{summaryError}</p>
               ) : summary ? (
-                <pre
-                  className="text-xs overflow-auto rounded-lg p-4"
-                  style={{ backgroundColor: colors.background, color: colors.foreground, maxHeight: '480px' }}
-                >
-                  {JSON.stringify(summary, null, 2)}
-                </pre>
+                <div className="relative">
+                  <button
+                    onClick={handleCopySummary}
+                    className="absolute top-2 right-2 p-2 rounded-lg transition-colors hover:opacity-80"
+                    style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}` }}
+                    title="Copy JSON to clipboard"
+                  >
+                    {copied ? (
+                      <Check className="h-4 w-4" style={{ color: colors.accent }} />
+                    ) : (
+                      <Copy className="h-4 w-4" style={{ color: colors.mutedForeground }} />
+                    )}
+                  </button>
+                  <pre
+                    className="text-xs overflow-auto rounded-lg p-4"
+                    style={{ backgroundColor: colors.background, color: colors.foreground, maxHeight: '480px' }}
+                  >
+                    {JSON.stringify(summary, null, 2)}
+                  </pre>
+                </div>
               ) : null
             )}
           </>

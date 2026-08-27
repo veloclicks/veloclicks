@@ -1,5 +1,3 @@
-version: '3.8'
-
 # context: sets the folder which docker compose can 'see' and use as a root folder when creating containers
 #          this is set relative to the folder where the docker-compose file is. Thus for react, i set the
 #          context to ./frontend as the frontend folder is one below the folder containing docker-compose.
@@ -46,6 +44,20 @@ services:
     ports:
       - 3001:8080
     env_file: .env
+    restart: unless-stopped
+
+  auth:
+    container_name: vc_lambda_auth
+    build:
+      context: ./lambdas/auth
+      dockerfile: Dockerfile
+    ports:
+      - 3002:8080
+    env_file: .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - db
     restart: unless-stopped
 
   #frontend:

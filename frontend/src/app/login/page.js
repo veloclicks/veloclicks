@@ -62,7 +62,10 @@ const LoginPage = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/login`, {
+      // Use AUTH_URL, not API_URL — login goes directly to the auth lambda,
+      // bypassing Flask entirely. In production AUTH_URL is the API Gateway
+      // endpoint for the auth lambda; locally it's the auth container on port 3002.
+      const response = await fetch(`${process.env.NEXT_PUBLIC_AUTH_URL}/api/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
