@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(mkdir -p /Users/patrick/dev/veloclicks/ai/playbooks/structural_refactoring)",
-      "Bash(git rm *)"
+      "Bash(git rm *)",
+      "Bash(aws sts *)",
+      "Bash(aws configure *)",
+      "Bash(sntp time.apple.com)",
+      "Bash(sudo -n sntp -sS time.apple.com)",
+      "Bash(aws ssm *)",
+      "Bash(sam deploy *)"
     ],
     "additionalDirectories": [
       "/Users/patrick/dev/veloclicks/ai/playbooks"

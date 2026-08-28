@@ -1,6 +1,21 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 
+# Secrets are passed in as NoEcho parameters, resolved from SSM at deploy time
+# (see deploy command) rather than via {{resolve:ssm-secure:...}} — CloudFormation
+# does not support secure SSM dynamic references in Lambda Environment Variables.
+
+Parameters:
+  AnthropicApiKey:
+    Type: String
+    NoEcho: true
+  DatabaseUrl:
+    Type: String
+    NoEcho: true
+  SecretKey:
+    Type: String
+    NoEcho: true
+
 Resources:
   CoachFunction:
     Type: AWS::Serverless::Function
@@ -11,6 +26,10 @@ Resources:
       Runtime: python3.11
       Timeout: 30
       MemorySize: 512
+      Environment:
+        Variables:
+          ANTHROPIC_API_KEY: !Ref AnthropicApiKey
+          LLM_MODEL: claude-sonnet-5
 
   AuthFunction:
     Type: AWS::Serverless::Function
@@ -21,6 +40,10 @@ Resources:
       Runtime: python3.11
       Timeout: 10
       MemorySize: 256
+      Environment:
+        Variables:
+          DATABASE_URL: !Ref DatabaseUrl
+          SECRET_KEY: !Ref SecretKey
       Events:
         Login:
           Type: Api
@@ -42,3 +65,8 @@ Resources:
           Properties:
             Path: /api/{proxy+}
             Method: options
+
+Outputs:
+  AuthApiUrl:
+    Description: Invoke URL for the auth API
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
