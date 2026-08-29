@@ -2,7 +2,9 @@
 
 ## Local
 
-### Start Flask + Postgres (Docker Compose)
+Three things run locally: Docker Compose (Postgres, Flask, Coach Lambda), SAM (Auth Lambda), and Next (frontend).
+
+### Start Flask + Postgres + Coach Lambda (Docker Compose)
 
 ```
 cd ~/dev/veloclicks
@@ -11,9 +13,23 @@ open -a docker                    # starts Docker Desktop if not already running
 docker compose up --build         # build + start
 docker compose up                 # start (no rebuild)
 docker compose up -d              # start in background
-docker compose restart flask      # restart one service (db, flask, lambdas, auth)
+docker compose restart flask      # restart one service (db, flask, lambdas)
 docker compose down               # stop everything
 ```
+
+### Start the Auth Lambda (SAM)
+
+Auth is invoked via API Gateway (the browser calls it directly), so it needs real API Gateway event simulation — Docker Compose alone can't provide that faithfully, hence SAM. Requires Docker Compose's `db` service already running (see above), since it connects to Postgres over the `veloclicks_default` Docker network.
+
+```
+cd ~/dev/veloclicks/aws/lambdas
+sam build
+python3 generate_local_env.py       # regenerates env.local.json from .env — rerun if .env changes
+
+sam local start-api --port 3002 --docker-network veloclicks_default --env-vars env.local.json
+```
+
+First request after `sam build` pulls/builds the Lambda runtime image — can take ~30s once, then it's fast.
 
 ### Start the frontend
 
@@ -30,7 +46,7 @@ npm run dev
 - Flask health: http://localhost:5002/health
 - Flask user list: http://localhost:5002/listusers
 - Coach Lambda (RIE): http://localhost:3001/2015-03-31/functions/function/invocations
-- Auth Lambda: http://localhost:3002/api/login
+- Auth Lambda (SAM): http://localhost:3002/api/login
 
 ### VS Code
 

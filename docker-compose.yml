@@ -46,19 +46,9 @@ services:
     env_file: .env
     restart: unless-stopped
 
-  auth:
-    container_name: vc_lambda_auth
-    build:
-      context: ./aws/lambdas/auth
-      dockerfile: Dockerfile
-    ports:
-      - 3002:8080
-    env_file: .env
-    environment:
-      - PYTHONUNBUFFERED=1
-    depends_on:
-      - db
-    restart: unless-stopped
+  # Auth Lambda runs locally via `sam local start-api`, not Docker Compose —
+  # see docs/cheat_sheet.md. Its API Gateway trigger needs real API Gateway
+  # event simulation, which only SAM's own tooling provides correctly.
 
   #frontend:
   #  container_name: vc_react

@@ -97,7 +97,7 @@ graph TB
 ```
 
 **Notes**
-- `api_gateway_shim.py` (Auth Lambda only, not shown) is a local-dev-only HTTP shim standing in for API Gateway when running under Docker Compose — see [aws/lambdas/auth/api_gateway_shim.py](../aws/lambdas/auth/api_gateway_shim.py). It has no effect on the deployed Lambda.
+- Auth Lambda runs locally via `sam local start-api` (real API Gateway event simulation, maintained by AWS) rather than Docker Compose — see [docs/cheat_sheet.md](cheat_sheet.md). Coach Lambda still runs under Docker Compose, using the Lambda base image's own Runtime Interface Emulator directly — a faithful simulation of the `boto3.invoke()` path Flask actually uses, so no separate tooling is needed there.
 - Coach Lambda has no DB access — it's a pure prompt-in/text-out function; the analytics data is assembled entirely by Flask before invocation.
 
 ## Sequence: Login
