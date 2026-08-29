@@ -88,25 +88,6 @@ services:
   #  restart: unless-stopped
 
 
-  #celery:
-  #  container_name: vc_celery
-  #  build:
-  #    context: .
-  #    dockerfile: celery/Dockerfile
-  #  volumes:
-  #    - ./flask:/app
-  #  depends_on:
-  #    - redis
-  #  environment:
-  #    - CELERY_BROKER_URL=redis://redis:6379/0
-  #    - CELERY_RESULT_BACKEND=redis://redis:6379/0
-  #  command: celery -A app.make_celery worker --loglevel=debug
-
-  #redis:
-  #  image: "redis:alpine"
-  #  ports:
-  #    - "6379:6379"
-
 volumes:
   # to persist the database tables
   postgres_data:

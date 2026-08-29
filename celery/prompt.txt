@@ -1,6 +1,0 @@
-v0 UX
-BUild a responsive UI in react for a sports data website. I need a login page, registration page and an activities page. The activities page should list, in a table, the following attributes of an 'Activity' : id, date/time, elapsed time, distance, average speed, elevation gain, average power (W), Normalised POwer (W). I need the ability to order the table by each activity attribute. I also need a way to only show activities by year (ability to select multiple years) and a slided to filter activities listed to only show those whose Elapsed Time (hours and minutes) is greater than the slider value and Normalised Power (watts) is greater than the slider value. The design needs to be clean with a 'data' look and feel.  I will also need to display graphs that compare the activity metrics across years. For example to plot total elapsed time for activities, by month for a number of different years - with month on the X-Axis, time on they Y-axis and a different line for each year. Thus the colour scheme needs to accommodate the need to clearly differentiate between different lines on a chart. I favour blues greens and oranges
-
-demo@example.com
-
-

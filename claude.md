@@ -36,7 +36,6 @@
 ## Key Folders
 - flask <-- has all python code organised into modules
 - frontend <-- next.js front end
-- celery <-- IGNORE
 - lambda_layers <-- Contains libs that can be deployed to AWS to reduce lambda size
 - lambdas <-- Has some lambdas as Patrick migrates towards that
 

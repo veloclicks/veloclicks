@@ -85,6 +85,7 @@ lambdas/**/package/
 lambdas/**/build/
 lambdas/**/*.zip
 lambdas/**/response.json
+lambdas/.aws-sam/
 
 flask/app/output/
 output/
