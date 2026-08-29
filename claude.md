@@ -30,16 +30,24 @@
 ### Production Environment
 - Front End deployed to Vercel — `https://veloclicks-prod.vercel.app`
 - Zappa wrapper in production deployed to AWS lambda (covers the core Flask app only)
-- AI coach is a separate AWS Lambda (`veloclicks-coach`), deployed independently via AWS SAM (`lambdas/template.yaml`) and invoked from Flask over boto3 — not part of the Zappa deployment
-- Auth is mid-migration from Flask routes to a dedicated `veloclicks-auth` Lambda (`lambdas/auth/`, also SAM-deployed). Flask still serves `/register` and `/login` directly for now — not yet cut over
+- AI coach is a separate AWS Lambda (`veloclicks-coach`), deployed independently via AWS SAM (`aws/lambdas/template.yaml`) and invoked from Flask over boto3 — not part of the Zappa deployment
+- Auth is mid-migration from Flask routes to a dedicated `veloclicks-auth` Lambda (`aws/lambdas/auth/`, also SAM-deployed). Flask still serves `/register` and `/login` directly for now — not yet cut over
 
 ## Key Folders
 - flask <-- has all python code organised into modules
 - frontend <-- next.js front end
-- lambda_layers <-- Contains libs that can be deployed to AWS to reduce lambda size
-- lambdas <-- Has some lambdas as Patrick migrates towards that
+- aws/lambda_layers <-- Contains libs that can be deployed to AWS to reduce lambda size
+- aws/lambdas <-- Has some lambdas as Patrick migrates towards that
 
+# Project Rules
 
+Migrated from a legacy `.claudecode/prompts.md` (not read by current tooling — folded in here 2026-08-29 so it's actually honored).
+
+- **Frontend never accesses the database directly.** Always through Flask's API, or the auth lambda's own API for login. This is an app architecture rule, not a restriction on debugging — direct `psql`/`docker exec` DB inspection during development is fine and expected.
+- **Explain reasoning before showing code or making changes.**
+- **Keep it simple.** Only implement exactly what's requested — no unrequested validation, error handling, or "improvements." Don't over-engineer or design for hypothetical future requirements.
+- **Flask container commands run via Docker exec** — container name `vc_flask`, e.g. `docker exec vc_flask flask admin list-activities --user-id 1 --year 2024 --month 11`.
+- **Never include Claude/AI attribution in commit messages.** No "🤖 Generated with Claude Code" line, no "Co-Authored-By: Claude" trailer. This overrides the default commit template.
 
 # Backlog
 
@@ -50,7 +58,7 @@ Agreed order of work, 2026-03-25, with Patrick's current priorities (Aug 2026) p
 2. Move away from Zappa in production because it is too error prone — prefer Lambda as much as possible, but wary of breaking everything
 3. Improve activity page features — showing a proper power graph
 4. Expose data as an MCP server
-5. Switch local lambda dev/test to `sam local start-api` / `sam local invoke` (reading `lambdas/template.yaml`) instead of the current Docker Compose + hand-rolled `local_server.py` shim for auth. **Flagged: this is a best-practice/consistency improvement, not a pragmatic necessity** — the current setup works and lets everything come up with one `docker compose up`. The real risk it addresses is drift: `local_server.py` hand-builds the API Gateway event shape, and if that drifts from what API Gateway actually sends, bugs only surface after deploying to prod.
+5. Switch local lambda dev/test to `sam local start-api` / `sam local invoke` (reading `aws/lambdas/template.yaml`) instead of the current Docker Compose + hand-rolled `local_server.py` shim for auth. **Flagged: this is a best-practice/consistency improvement, not a pragmatic necessity** — the current setup works and lets everything come up with one `docker compose up`. The real risk it addresses is drift: `local_server.py` hand-builds the API Gateway event shape, and if that drifts from what API Gateway actually sends, bugs only surface after deploying to prod.
 
 ## Housekeeping
 6. ✅ Remove Celery — strip `celery_init_app()`, `test_broker_connection()`, dead files

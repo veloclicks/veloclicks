@@ -75,17 +75,17 @@ implementation_notes.txt
 zappa/zappa_settings.json
 zappa/app/
 
-lambda_layers
+aws/lambda_layers
 
 # Zappa build artifacts
 zappa/veloclicks-*.tar.gz
 
 # Lambda build artifacts
-lambdas/**/package/
-lambdas/**/build/
-lambdas/**/*.zip
-lambdas/**/response.json
-lambdas/.aws-sam/
+aws/lambdas/**/package/
+aws/lambdas/**/build/
+aws/lambdas/**/*.zip
+aws/lambdas/**/response.json
+aws/lambdas/.aws-sam/
 
 flask/app/output/
 output/

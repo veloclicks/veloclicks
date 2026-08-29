@@ -38,7 +38,7 @@ graph TB
 ```
 
 **Notes**
-- Auth and Coach are deployed together under one CloudFormation stack (`veloclicks-lambdas`, from `lambdas/template.yaml`). Flask is deployed separately via Zappa, unrelated tooling.
+- Auth and Coach are deployed together under one CloudFormation stack (`veloclicks-lambdas`, from `aws/lambdas/template.yaml`). Flask is deployed separately via Zappa, unrelated tooling.
 - Only the frontend's **login** call was cut over to the Auth Lambda. **Register** still goes through Flask, even though the Auth Lambda also implements `/api/register` — see the Register sequence below.
 - There is no "production" AWS environment — only `dev` exists (see [claude.md](../claude.md)). The Vercel frontend and Postgres DB are the only genuinely production-facing pieces today.
 
@@ -96,7 +96,7 @@ graph TB
 ```
 
 **Notes**
-- `local_server.py` (Auth Lambda only, not shown) is a local-dev-only HTTP shim standing in for API Gateway when running under Docker Compose — see [lambdas/auth/local_server.py](../lambdas/auth/local_server.py). It has no effect on the deployed Lambda.
+- `local_server.py` (Auth Lambda only, not shown) is a local-dev-only HTTP shim standing in for API Gateway when running under Docker Compose — see [aws/lambdas/auth/local_server.py](../aws/lambdas/auth/local_server.py). It has no effect on the deployed Lambda.
 - Coach Lambda has no DB access — it's a pure prompt-in/text-out function; the analytics data is assembled entirely by Flask before invocation.
 
 ## Sequence: Login

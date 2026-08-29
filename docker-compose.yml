@@ -39,7 +39,7 @@ services:
   lambdas:
     container_name: vc_lambdas
     build:
-      context: ./lambdas/coach
+      context: ./aws/lambdas/coach
       dockerfile: Dockerfile
     ports:
       - 3001:8080
@@ -49,7 +49,7 @@ services:
   auth:
     container_name: vc_lambda_auth
     build:
-      context: ./lambdas/auth
+      context: ./aws/lambdas/auth
       dockerfile: Dockerfile
     ports:
       - 3002:8080
