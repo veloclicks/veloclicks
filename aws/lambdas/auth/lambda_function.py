@@ -14,7 +14,7 @@ def get_auth_service():
     return _auth_service
 
 
-def handler(event, context):
+def lambda_handler(event, context):
     # Support both API Gateway v1 (httpMethod/path) and v2 (requestContext.http)
     path = event.get("path", "") or event.get("rawPath", "")
     method = event.get("httpMethod", "") or event.get("requestContext", {}).get("http", {}).get("method", "")

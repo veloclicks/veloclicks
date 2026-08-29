@@ -3,12 +3,12 @@ Local development HTTP server for the auth lambda.
 
 WHY THIS EXISTS:
   In production, the auth lambda sits behind AWS API Gateway, which translates
-  incoming HTTP requests into Lambda event dicts and passes them to handler().
+  incoming HTTP requests into Lambda event dicts and passes them to lambda_handler().
   Locally (Docker Compose), we use the Lambda RIC base image which only speaks
   the Lambda invocation protocol — it cannot accept plain HTTP from the browser.
   This script replaces the Lambda RIC entrypoint for local dev only. It acts as
   a minimal stand-in for API Gateway: it receives plain HTTP, builds a Lambda
-  event dict, calls handler(), and sends the response back as HTTP.
+  event dict, calls lambda_handler(), and sends the response back as HTTP.
 
   The Dockerfile CMD is set to run this script. For AWS deployment, SAM packages
   the Python source as a ZIP and ignores the Dockerfile entirely, so this file
@@ -18,7 +18,7 @@ WHY THIS EXISTS:
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from handler import handler
+from lambda_function import lambda_handler
 
 
 class APIGatewayShim(BaseHTTPRequestHandler):
@@ -27,8 +27,8 @@ class APIGatewayShim(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         raw_body = self.rfile.read(length).decode("utf-8") if length else ""
 
-        # Build a minimal API Gateway v1 proxy event so handler() sees the same
-        # shape it receives in production.
+        # Build a minimal API Gateway v1 proxy event so lambda_handler() sees the
+        # same shape it receives in production.
         event = {
             "httpMethod": method,
             "path": self.path,
@@ -39,7 +39,7 @@ class APIGatewayShim(BaseHTTPRequestHandler):
             },
         }
 
-        result = handler(event, None)
+        result = lambda_handler(event, None)
 
         self.send_response(result["statusCode"])
         for key, value in result.get("headers", {}).items():

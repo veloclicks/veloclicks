@@ -77,26 +77,27 @@ graph TB
 ```mermaid
 graph TB
     subgraph AuthLambda["Auth Lambda (veloclicks-auth)"]
-        Handler["handler.py<br/>routes by path: login / register / refresh"]
+        AuthHandler["lambda_function.py<br/>routes by path: login / register / refresh"]
         AuthService["auth_service.py<br/>password check, JWT issue"]
         AuthDB["db.py<br/>psycopg2 (DATABASE_URL)"]
     end
 
     subgraph CoachLambda["Coach Lambda (veloclicks-coach)"]
-        LambdaFn["lambda_function.py<br/>build prompt, call Claude"]
+        CoachHandler["lambda_function.py<br/>parse event, format response"]
+        CoachService["coach_service.py<br/>build prompt, call Claude"]
         Prompts["coaching_prompts.py<br/>ACTIVITY_COACH_PROMPT"]
     end
 
     Postgres[("Postgres")]
     Anthropic["Anthropic API"]
 
-    Handler --> AuthService --> AuthDB --> Postgres
-    LambdaFn --> Prompts
-    LambdaFn -->|"Anthropic SDK"| Anthropic
+    AuthHandler --> AuthService --> AuthDB --> Postgres
+    CoachHandler --> CoachService --> Prompts
+    CoachService -->|"Anthropic SDK"| Anthropic
 ```
 
 **Notes**
-- `local_server.py` (Auth Lambda only, not shown) is a local-dev-only HTTP shim standing in for API Gateway when running under Docker Compose — see [aws/lambdas/auth/local_server.py](../aws/lambdas/auth/local_server.py). It has no effect on the deployed Lambda.
+- `api_gateway_shim.py` (Auth Lambda only, not shown) is a local-dev-only HTTP shim standing in for API Gateway when running under Docker Compose — see [aws/lambdas/auth/api_gateway_shim.py](../aws/lambdas/auth/api_gateway_shim.py). It has no effect on the deployed Lambda.
 - Coach Lambda has no DB access — it's a pure prompt-in/text-out function; the analytics data is assembled entirely by Flask before invocation.
 
 ## Sequence: Login

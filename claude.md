@@ -58,7 +58,7 @@ Agreed order of work, 2026-03-25, with Patrick's current priorities (Aug 2026) p
 2. Move away from Zappa in production because it is too error prone — prefer Lambda as much as possible, but wary of breaking everything
 3. Improve activity page features — showing a proper power graph
 4. Expose data as an MCP server
-5. Switch local lambda dev/test to `sam local start-api` / `sam local invoke` (reading `aws/lambdas/template.yaml`) instead of the current Docker Compose + hand-rolled `local_server.py` shim for auth. **Flagged: this is a best-practice/consistency improvement, not a pragmatic necessity** — the current setup works and lets everything come up with one `docker compose up`. The real risk it addresses is drift: `local_server.py` hand-builds the API Gateway event shape, and if that drifts from what API Gateway actually sends, bugs only surface after deploying to prod.
+5. Switch local lambda dev/test to `sam local start-api` / `sam local invoke` (reading `aws/lambdas/template.yaml`) instead of the current Docker Compose + hand-rolled `api_gateway_shim.py` shim for auth. **Flagged: this is a best-practice/consistency improvement, not a pragmatic necessity** — the current setup works and lets everything come up with one `docker compose up`. The real risk it addresses is drift: `api_gateway_shim.py` hand-builds the API Gateway event shape, and if that drifts from what API Gateway actually sends, bugs only surface after deploying to prod.
 
 ## Housekeeping
 6. ✅ Remove Celery — strip `celery_init_app()`, `test_broker_connection()`, dead files
