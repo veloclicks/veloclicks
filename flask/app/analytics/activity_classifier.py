@@ -331,29 +331,26 @@ def _structure_from_laps(laps: list) -> dict:
     # prevents adjacent 44s/74s VO2 stages from becoming separate reps.
     recovery_floor = max_power * 0.60
     work_floor = max_power * 0.70
-    # A substantial early recovery marks the end of the warmup. The rule
-    # requires subsequent repeated work, so it does not discard the first
-    # interval of sessions that begin immediately with work.
+    # Find the last substantial early recovery before the main session.
+    # Only a short priming burst may precede it; once a sustained work
+    # repetition has occurred, subsequent recoveries separate reps.
     start = 0
     elapsed = 0
     for i, lap in enumerate(laps[:-2]):
         elapsed += float(lap.get('elapsed_time') or 0)
         if elapsed > 1500:
             break
-        # Once a sustained work bout has occurred, later recoveries are
-        # between repetitions, not additional warm-up boundaries. Short
-        # high-power priming steps in a warm-up are still allowed.
         preceding_work_s = 0
         for j in range(i - 1, -1, -1):
             if powers[j] < work_floor:
                 break
             preceding_work_s += float(laps[j].get('elapsed_time') or 0)
+        # A short priming step can be followed by a low-power warm-up
+        # recovery, whereas 118s VO2 reps must be kept intact.
         if (float(lap.get('elapsed_time') or 0) >= 180
                 and powers[i] < recovery_floor
-                and preceding_work_s < 100
+                and preceding_work_s < 90
                 and sum(p >= work_floor for p in powers[i + 1:]) >= 3):
-            # Use the last qualifying warm-up recovery, not a recovery
-            # separating genuine work repetitions.
             start = i + 1
 
     intervals, recoveries = [], []
