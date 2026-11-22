@@ -340,11 +340,20 @@ def _structure_from_laps(laps: list) -> dict:
         elapsed += float(lap.get('elapsed_time') or 0)
         if elapsed > 1500:
             break
+        # Once a sustained work bout has occurred, later recoveries are
+        # between repetitions, not additional warm-up boundaries. Short
+        # high-power priming steps in a warm-up are still allowed.
+        preceding_work_s = 0
+        for j in range(i - 1, -1, -1):
+            if powers[j] < work_floor:
+                break
+            preceding_work_s += float(laps[j].get('elapsed_time') or 0)
         if (float(lap.get('elapsed_time') or 0) >= 180
                 and powers[i] < recovery_floor
+                and preceding_work_s < 100
                 and sum(p >= work_floor for p in powers[i + 1:]) >= 3):
-            # Use the last qualifying warm-up recovery, not the first:
-            # a stepped warm-up can include several low-power stages.
+            # Use the last qualifying warm-up recovery, not a recovery
+            # separating genuine work repetitions.
             start = i + 1
 
     intervals, recoveries = [], []
