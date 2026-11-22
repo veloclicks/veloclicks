@@ -384,23 +384,11 @@ def _structure_from_power_stream(
     )
 
     if is_indoor and time_data:
-        ride_start    = time_data[0]
-        warmup_cutoff = ride_start + INDOOR_WARMUP_S
-        before = len(intervals)
-        intervals = [iv for iv in intervals if iv.get('start_s', 0) >= warmup_cutoff]
-        if len(intervals) < before:
-            logger.info(
-                f"_structure_from_power_stream() stripped {before - len(intervals)} "
-                f"warmup interval(s) within first {INDOOR_WARMUP_S//60} min"
-            )
-            for i, iv in enumerate(intervals):
-                iv['rep_number'] = i + 1
-            stripped = before - len(intervals)
-            for r in recoveries:
-                if 'after_rep' in r:
-                    r['after_rep'] -= stripped
-                    if r['after_rep'] <= 0:
-                        del r['after_rep']
+        # Do not use a fixed ten-minute cutoff: trainer warm-ups often contain
+        # ramp steps beyond ten minutes that cross the power detection threshold.
+        intervals, recoveries = _exclude_indoor_warmup(
+            intervals, recoveries, ride_start_s=time_data[0]
+        )
 
     _strip_fringe_intervals(intervals, recoveries)
 
@@ -426,6 +414,66 @@ def _structure_from_power_stream(
         "sets":                sets,
         "summary":             summary,
     }
+
+
+
+def _exclude_indoor_warmup(intervals: list, recoveries: list, ride_start_s: float) -> tuple:
+    """Exclude an early ramp effort only when later repetitions establish a pattern.
+
+    Conservative by design: an early effort is retained if there is insufficient
+    evidence that it differs from the main work. Never discard a genuine first
+    interval simply because it occurs in the first ten minutes.
+    """
+    if len(intervals) < 3:
+        return intervals, recoveries
+
+    remaining = list(intervals)
+    while len(remaining) >= 3:
+        first = remaining[0]
+        later = remaining[1:]
+        # A warm-up candidate must start within the first 25 minutes.
+        if first.get('start_s', float('inf')) - ride_start_s > 1500:
+            break
+        powers = sorted(iv.get('avg_power_w', 0) for iv in later)
+        durations = sorted(iv.get('duration_s', 0) for iv in later)
+        typical_power = powers[len(powers) // 2]
+        typical_duration = durations[len(durations) // 2]
+        if not typical_power or not typical_duration:
+            break
+        # Ramp steps are normally shorter or materially easier than the
+        # repeated main efforts. Require two later comparable repetitions.
+        comparable = sum(
+            abs(iv.get('avg_power_w', 0) - typical_power) <= typical_power * 0.12
+            and abs(iv.get('duration_s', 0) - typical_duration) <= typical_duration * 0.30
+            for iv in later
+        )
+        is_ramp_step = (
+            first.get('avg_power_w', 0) < typical_power * 0.90
+            or first.get('duration_s', 0) < typical_duration * 0.45
+        )
+        if comparable < 2 or not is_ramp_step:
+            break
+        logger.info("_exclude_indoor_warmup() excluded early ramp effort at %ss",
+                    first.get('start_s'))
+        remaining.pop(0)
+
+    removed = len(intervals) - len(remaining)
+    if not removed:
+        return intervals, recoveries
+
+    for index, iv in enumerate(remaining, 1):
+        iv['rep_number'] = index
+    # Recovery entries are still useful for the time series, but only
+    # recoveries between retained work intervals belong to interval analysis.
+    kept_recoveries = []
+    for recovery in recoveries:
+        after = recovery.get('after_rep')
+        if after is None or after <= removed or after >= len(intervals):
+            continue
+        r = dict(recovery)
+        r['after_rep'] = after - removed
+        kept_recoveries.append(r)
+    return remaining, kept_recoveries
 
 
 def _validate_interval_session(intervals: list, recoveries: list) -> Optional[str]:
