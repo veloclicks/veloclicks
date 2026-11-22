@@ -358,7 +358,7 @@ def _structure_from_laps(laps: list) -> dict:
             samples = [(float(p[key]), float(p.get('elapsed_time') or 0))
                        for p in parts if p.get(key) is not None]
             total = sum(d for _, d in samples)
-            return round(sum(v * d for v, d in samples) / total, 0) if total else None
+            return round(sum(v * d for v, d in samples) / total, 0) if total else 0
         return {
             'duration_s': duration,
             'avg_power_w': weighted('average_watts'),
@@ -724,9 +724,9 @@ def _group_into_sets(intervals: list, recoveries: list, set_gap_s: int = 300) ->
 
 
 def _build_set(set_number: int, intervals: list, recoveries: list) -> dict:
-    set_max_hr    = max((iv.get('max_hr_bpm',       0) for iv in intervals), default=None)
-    set_max_power = max((iv.get('max_power_w',      0) for iv in intervals), default=None)
-    set_peak_cad  = max((iv.get('peak_cadence_rpm', 0) for iv in intervals), default=None)
+    set_max_hr    = max((iv.get('max_hr_bpm') or 0 for iv in intervals), default=None)
+    set_max_power = max((iv.get('max_power_w') or 0 for iv in intervals), default=None)
+    set_peak_cad  = max((iv.get('peak_cadence_rpm') or 0 for iv in intervals), default=None)
     return {
         'set_number':           set_number,
         'set_max_hr_bpm':       set_max_hr,
