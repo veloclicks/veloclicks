@@ -1,13 +1,14 @@
 """Export recent cycling activity streams for deterministic analytics regression tests.
 
 Run from repository root:
-  docker compose exec -T flask python scripts/export_analytics_fixtures.py > analytics-fixtures.json
+  docker exec -e PYTHONPATH=/app vc_flask python /app/scripts/export_analytics_fixtures.py > analytics-fixtures.json
 
 Uses the existing local DB and Strava token; no database writes intended.
 Do not commit the output: it contains personal exercise measurements.
 """
 import json
 import sys
+from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 
 from app import create_app
@@ -20,6 +21,13 @@ STREAM_TYPES = ["time", "watts", "heartrate", "cadence", "altitude", "velocity_s
 
 
 def main():
+    # Flask/config and Strava integrations can print diagnostic banners to stdout.
+    # Keep the redirected output strictly JSON, including during app initialization.
+    with redirect_stdout(sys.stderr):
+        return _collect_and_export()
+
+
+def _collect_and_export():
     app = create_app()
     with app.app_context():
         since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=DAYS)
@@ -57,8 +65,9 @@ def main():
             })
         if not output["activities"]:
             raise RuntimeError("No activities with accessible streams; check Strava connection")
-        json.dump(output, sys.stdout, default=str, separators=(",", ":"))
-        sys.stdout.write("\n")
+        # redirect_stdout above is scoped to stderr; write JSON to original stdout.
+        json.dump(output, sys.__stdout__, default=str, separators=(",", ":"))
+        sys.__stdout__.write("\n")
         print(f"Exported {len(output['activities'])} rides", file=sys.stderr)
 
 
