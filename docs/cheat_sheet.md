@@ -31,6 +31,25 @@ sam local start-api --port 3002 --docker-network veloclicks_default --env-vars e
 
 First request after `sam build` pulls/builds the Lambda runtime image — can take ~30s once, then it's fast.
 
+### Run Python scripts inside the Flask container
+
+The Flask container is named `vc_flask`. Its working directory is `/app/app`, while the host's `flask/` directory is mounted at `/app`. For scripts stored in `flask/scripts/`, use the absolute path and set `PYTHONPATH=/app` so `from app import ...` works.
+
+From the repository root on the host:
+
+```bash
+docker exec -e PYTHONPATH=/app vc_flask python /app/scripts/<script_name>.py
+```
+
+Export recent cycling streams for analytics regression testing (requires Docker Compose's Flask container running and working Strava access):
+
+```bash
+cd ~/dev/veloclicks
+docker exec -e PYTHONPATH=/app vc_flask python /app/scripts/export_analytics_fixtures.py > analytics-fixtures.json
+```
+
+The output file is written on the **host**. Do not commit it: it contains personal ride data. Python errors appear in the terminal; if the script fails, the redirected JSON may be empty. For local development, prefer this documented `docker exec` pattern over guessing container working directories.
+
 ### Start the frontend
 
 The frontend is not in Docker Compose — run it separately.
