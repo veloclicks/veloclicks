@@ -64,9 +64,20 @@ code ~/dev/veloclicks
 
 ## Production (Remote)
 
+**Deployment overview:** Pushing to GitHub automatically deploys the Next.js frontend through Vercel. It does **not** deploy Flask or the standalone Lambdas. Backend changes must be deployed separately: use Zappa for the core Flask API and AWS SAM for the Auth and Coach Lambdas. These are independent deployments; deploy only the component you changed.
+
+| Component | Production deployment | Trigger |
+| --- | --- | --- |
+| Next.js frontend | Vercel | Automatic on Git push |
+| Core Flask API | `zappa update dev` | Manual |
+| Auth + Coach Lambdas | `sam build` then `sam deploy` | Manual, shared CloudFormation stack |
+
+
 There is no separate "production" AWS environment today — only `dev`. See [claude.md](../claude.md) for why.
 
 ### Deploy the Flask app (Zappa)
+
+Use this for changes to the existing Flask backend. The Zappa `dev` stage is the current remote environment; it is not a separate production stage.
 
 ```
 cd ~/dev/veloclicks/zappa
@@ -80,6 +91,8 @@ zappa tail dev --since 1h
 Health check: https://ztbap26rs2.execute-api.eu-west-2.amazonaws.com/dev/health
 
 ### Deploy the Auth + Coach Lambdas (SAM)
+
+Use this for changes to either standalone Lambda or their SAM configuration. Local `sam local start-api` only runs the Auth Lambda locally; it does **not** deploy anything to AWS.
 
 Both are deployed together under one CloudFormation stack (`veloclicks-lambdas`) from `aws/lambdas/template.yaml`. Their secrets (`DATABASE_URL`, `SECRET_KEY`, `ANTHROPIC_API_KEY`) are pulled fresh from SSM at deploy time and passed in as parameters — CloudFormation doesn't support secure SSM references directly on Lambda environment variables.
 
@@ -110,9 +123,12 @@ aws cloudformation describe-stacks --stack-name veloclicks-lambdas --region eu-w
 
 ### Deploy the frontend (Vercel)
 
+No manual Vercel deployment command is needed for the normal Git-based workflow.
+
 1. Push to git — Vercel deploys on push automatically
 2. Check deployment status: https://vercel.com/veloclicks/~/deployments
-3. Login goes directly to the Auth Lambda (bypasses Flask), so Vercel needs `NEXT_PUBLIC_AUTH_URL` set to the Auth API URL above. If the Lambda stack is ever redeployed fresh (not just updated), this URL changes and needs updating in Vercel's project settings.
+3. Login from the frontend uses the Auth Lambda endpoint, so Vercel needs `NEXT_PUBLIC_AUTH_URL` set to the Auth API URL above. In the AWS Console, find it under **API Gateway → Stages → Prod** (or use the CloudFormation output command above). If the Lambda stack is recreated rather than updated, check whether this URL has changed and update Vercel's project settings if necessary.
+4. The authentication migration is not fully complete: Flask still contains its own login and registration routes. See `claude.md` before removing them.
 
 ---
 
