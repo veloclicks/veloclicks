@@ -98,3 +98,19 @@ def test_townsend_endurance_laps_are_not_intervals():
         (479, 126), (40, 119)]]
     result = _structure_from_laps(laps)
     assert not result["is_interval_session"]
+
+
+def test_missing_optional_lap_metrics_do_not_crash_summary():
+    laps = [lap(300, 90)]
+    for i in range(3):
+        work = lap(600, 210)
+        work.pop('average_cadence')
+        work.pop('max_heartrate')
+        laps.append(work)
+        if i < 2:
+            recovery = lap(300, 80)
+            recovery.pop('average_cadence')
+            laps.append(recovery)
+    result = _structure_from_laps(laps)
+    assert result['is_interval_session']
+    assert result['interval_count'] == 3
