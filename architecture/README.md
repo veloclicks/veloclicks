@@ -1,5 +1,7 @@
 # Veloclicks — Proposed Architecture
 
+**Decision record:** [Architecture Decision Log](decisions.md) — decisions made in discussions with ChatGPT, with agreed choices distinguished from proposals.
+
 **Status:** Proposal for discussion; not an implemented design or migration commitment.
 
 ## Goals (in priority order)
