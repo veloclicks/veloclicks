@@ -316,8 +316,8 @@ def _structure_from_laps(laps: list) -> dict:
 
     TrainerRoad frequently records one effort as multiple laps (e.g. an
     over/under or a two-stage VO2 rep). A sustained low-power recovery, not a
-    lap boundary, separates repetitions. The last substantial low-power
-    recovery before the repeated work also separates stepped warmups.
+    lap boundary, separates repetitions. Early high-power warm-up steps are
+    excluded only when subsequent repeated work establishes a pattern.
     """
     if not laps:
         return {"is_interval_session": False, "confidence": "low", "detection_method": "laps"}
@@ -329,7 +329,6 @@ def _structure_from_laps(laps: list) -> dict:
 
     # Only a clearly low-power recovery can separate efforts. This also
     # prevents adjacent 44s/74s VO2 stages from becoming separate reps.
-    recovery_floor = max_power * 0.60
     work_floor = max_power * 0.70
     intervals, recoveries = [], []
     current = []
