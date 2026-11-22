@@ -189,10 +189,12 @@ def _analyse_activity_structure(
     result: dict = {"activity_id": str(activity_id)}
 
     laps = get_activity_laps(user_id, activity_id)
-    if laps and _laps_look_like_intervals(laps):
-        logger.info("_analyse_activity_structure() using lap-based detection")
-        result.update(_structure_from_laps(laps))
-        return json.dumps(result, cls=_NumpyEncoder)
+    if laps and len(laps) >= 4:
+        lap_structure = _structure_from_laps(laps)
+        if lap_structure.get('is_interval_session'):
+            logger.info("_analyse_activity_structure() using lap-based detection")
+            result.update(lap_structure)
+            return json.dumps(result, cls=_NumpyEncoder)
 
     logger.info("_analyse_activity_structure() falling back to power stream detection")
     streams = get_activity_streams(
