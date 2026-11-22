@@ -331,31 +331,11 @@ def _structure_from_laps(laps: list) -> dict:
     # prevents adjacent 44s/74s VO2 stages from becoming separate reps.
     recovery_floor = max_power * 0.60
     work_floor = max_power * 0.70
-    # Find the last substantial early recovery before the main session.
-    # Only a short priming burst may precede it; once a sustained work
-    # repetition has occurred, subsequent recoveries separate reps.
-    start = 0
-    elapsed = 0
-    for i, lap in enumerate(laps[:-2]):
-        elapsed += float(lap.get('elapsed_time') or 0)
-        if elapsed > 1500:
-            break
-        preceding_work_s = 0
-        for j in range(i - 1, -1, -1):
-            if powers[j] < work_floor:
-                break
-            preceding_work_s += float(laps[j].get('elapsed_time') or 0)
-        # A short priming step can be followed by a low-power warm-up
-        # recovery, whereas 118s VO2 reps must be kept intact.
-        if (float(lap.get('elapsed_time') or 0) >= 180
-                and powers[i] < recovery_floor
-                and preceding_work_s < 90
-                and sum(p >= work_floor for p in powers[i + 1:]) >= 3):
-            start = i + 1
-
     intervals, recoveries = [], []
     current = []
     pending_recovery = []
+    elapsed_s = 0
+    current_start_s = 0
     def aggregate(parts):
         duration = sum(float(p.get('elapsed_time') or 0) for p in parts)
         if not duration:
@@ -375,7 +355,7 @@ def _structure_from_laps(laps: list) -> dict:
             'avg_cadence_rpm': weighted('average_cadence'),
         }
 
-    for lap in laps[start:]:
+    for lap in laps:
         power = float(lap.get('average_watts') or 0)
         if power >= work_floor:
             if pending_recovery and current:
@@ -384,6 +364,7 @@ def _structure_from_laps(laps: list) -> dict:
                     entry = aggregate(current)
                     if entry:
                         entry['rep_number'] = len(intervals) + 1
+                        entry['start_s'] = current_start_s
                         intervals.append(entry)
                     recovery = aggregate(pending_recovery)
                     if recovery:
@@ -393,15 +374,24 @@ def _structure_from_laps(laps: list) -> dict:
                 else:
                     current.extend(pending_recovery)
                 pending_recovery = []
+            if not current:
+                current_start_s = elapsed_s
             current.append(lap)
         elif current:
             pending_recovery.append(lap)
+        elapsed_s += float(lap.get('elapsed_time') or 0)
     if current:
         entry = aggregate(current)
         if entry:
             entry['rep_number'] = len(intervals) + 1
+            entry['start_s'] = current_start_s
             intervals.append(entry)
 
+    # Compare early candidate bouts with the repeated work that follows.
+    # A warm-up ramp may itself contain above-threshold steps and recoveries.
+    intervals, recoveries = _exclude_indoor_warmup(
+        intervals, recoveries, ride_start_s=0, short_ratio=0.60
+    )
     reason = _validate_interval_session(intervals, recoveries)
     if reason:
         return {"is_interval_session": False, "confidence": "medium",
@@ -485,7 +475,10 @@ def _structure_from_power_stream(
 
 
 
-def _exclude_indoor_warmup(intervals: list, recoveries: list, ride_start_s: float) -> tuple:
+def _exclude_indoor_warmup(
+    intervals: list, recoveries: list, ride_start_s: float,
+    short_ratio: float = 0.45,
+) -> tuple:
     """Exclude an early ramp effort only when later repetitions establish a pattern.
 
     Conservative by design: an early effort is retained if there is insufficient
@@ -517,7 +510,7 @@ def _exclude_indoor_warmup(intervals: list, recoveries: list, ride_start_s: floa
         )
         is_ramp_step = (
             first.get('avg_power_w', 0) < typical_power * 0.90
-            or first.get('duration_s', 0) < typical_duration * 0.45
+            or first.get('duration_s', 0) < typical_duration * short_ratio
         )
         if comparable < 2 or not is_ramp_step:
             break
