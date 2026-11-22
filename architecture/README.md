@@ -1,6 +1,6 @@
 # Veloclicks — Proposed Architecture
 
-**Decision record:** [Architecture Decision Log](decisions.md) — decisions made in discussions with ChatGPT, with agreed choices distinguished from proposals.
+**Decision record:** [Architecture Decision Log](decisions.md) — current decisions made with ChatGPT; implementation proposals remain in this document.
 
 **Status:** Proposal for discussion; not an implemented design or migration commitment.
 
@@ -72,8 +72,8 @@ These are **logical modules**, not necessarily separate deployable Lambdas.
 | --- | --- |
 | Next.js frontend | Keep Vercel |
 | Flask API | Replace Zappa with a SAM-managed Lambda using a thin WSGI adapter, initially preserving existing Flask routes |
-| Auth | Keep a standalone SAM Lambda; separate business logic from its handler |
-| Coach | Keep a standalone SAM Lambda; separate coaching implementation and prompts from its handler |
+| Auth | Currently a standalone SAM Lambda; review whether to retain this boundary; keep business logic separate from its handler |
+| Coach | Currently a standalone SAM Lambda; review whether to retain this boundary; keep coaching implementation separate from its handler |
 | Strava / Analytics | Keep logical module boundaries; do **not** split into additional Lambdas without a measured benefit |
 | Local development | Preserve Docker Compose; minimise the need to simulate Lambda locally for ordinary application logic |
 
