@@ -189,10 +189,12 @@ def _analyse_activity_structure(
     result: dict = {"activity_id": str(activity_id)}
 
     laps = get_activity_laps(user_id, activity_id)
-    if laps and _laps_look_like_intervals(laps):
-        logger.info("_analyse_activity_structure() using lap-based detection")
-        result.update(_structure_from_laps(laps))
-        return json.dumps(result, cls=_NumpyEncoder)
+    if laps and len(laps) >= 4:
+        lap_structure = _structure_from_laps(laps)
+        if lap_structure.get('is_interval_session'):
+            logger.info("_analyse_activity_structure() using lap-based detection")
+            result.update(lap_structure)
+            return json.dumps(result, cls=_NumpyEncoder)
 
     logger.info("_analyse_activity_structure() falling back to power stream detection")
     streams = get_activity_streams(
@@ -310,42 +312,97 @@ def _laps_look_like_intervals(laps: list) -> bool:
 
 
 def _structure_from_laps(laps: list) -> dict:
+    """Reconstruct work bouts from consecutive high-power laps.
+
+    TrainerRoad frequently records one effort as multiple laps (e.g. an
+    over/under or a two-stage VO2 rep). A sustained low-power recovery, not a
+    lap boundary, separates repetitions. Early high-power warm-up steps are
+    excluded only when subsequent repeated work establishes a pattern.
+    """
     if not laps:
         return {"is_interval_session": False, "confidence": "low", "detection_method": "laps"}
-    powers    = [lap.get('average_watts', 0) for lap in laps]
-    max_power = max(powers) if powers else 1
-    threshold = max_power * 0.75
-    intervals:  list = []
-    recoveries: list = []
-    rep_num = 1
-    for lap in laps:
-        avg_w = lap.get('average_watts', 0)
-        entry = {
-            'duration_s':      lap.get('elapsed_time', 0),
-            'avg_power_w':     round(float(avg_w), 0),
-            'max_power_w':     round(float(lap.get('max_watts', avg_w)), 0),
-            'avg_hr_bpm':      round(float(lap.get('average_heartrate', 0)), 0),
-            'max_hr_bpm':      round(float(lap.get('max_heartrate', 0)), 0),
-            'avg_cadence_rpm': round(float(lap.get('average_cadence', 0)), 0),
+
+    powers = [float(lap.get('average_watts') or 0) for lap in laps]
+    max_power = max(powers, default=0)
+    if max_power <= 0:
+        return {"is_interval_session": False, "confidence": "low", "detection_method": "laps"}
+
+    # Only a clearly low-power recovery can separate efforts. This also
+    # prevents adjacent 44s/74s VO2 stages from becoming separate reps.
+    work_floor = max_power * 0.70
+    intervals, recoveries = [], []
+    current = []
+    pending_recovery = []
+    elapsed_s = 0
+    current_start_s = 0
+    def aggregate(parts):
+        duration = sum(float(p.get('elapsed_time') or 0) for p in parts)
+        if not duration:
+            return None
+        def weighted(key):
+            samples = [(float(p[key]), float(p.get('elapsed_time') or 0))
+                       for p in parts if p.get(key) is not None]
+            total = sum(d for _, d in samples)
+            return round(sum(v * d for v, d in samples) / total, 0) if total else 0
+        return {
+            'duration_s': duration,
+            'avg_power_w': weighted('average_watts'),
+            'max_power_w': max((float(p.get('max_watts') or p.get('average_watts') or 0)
+                                for p in parts), default=None),
+            'avg_hr_bpm': weighted('average_heartrate'),
+            'max_hr_bpm': max((float(p.get('max_heartrate') or 0) for p in parts), default=None),
+            'avg_cadence_rpm': weighted('average_cadence'),
         }
-        if avg_w >= threshold:
-            entry['rep_number']           = rep_num
-            entry['intensity_pct_of_max'] = round(avg_w / max_power * 100, 1)
+
+    for lap in laps:
+        power = float(lap.get('average_watts') or 0)
+        if power >= work_floor:
+            if pending_recovery and current:
+                # A short transition between high-power laps is not a rest.
+                if sum(float(x.get('elapsed_time') or 0) for x in pending_recovery) >= 45:
+                    entry = aggregate(current)
+                    if entry:
+                        entry['rep_number'] = len(intervals) + 1
+                        entry['start_s'] = current_start_s
+                        intervals.append(entry)
+                    recovery = aggregate(pending_recovery)
+                    if recovery:
+                        recovery['after_rep'] = len(intervals)
+                        recoveries.append(recovery)
+                    current = []
+                else:
+                    current.extend(pending_recovery)
+                pending_recovery = []
+            if not current:
+                current_start_s = elapsed_s
+            current.append(lap)
+        elif current:
+            pending_recovery.append(lap)
+        elapsed_s += float(lap.get('elapsed_time') or 0)
+    if current:
+        entry = aggregate(current)
+        if entry:
+            entry['rep_number'] = len(intervals) + 1
+            entry['start_s'] = current_start_s
             intervals.append(entry)
-            rep_num += 1
-        else:
-            if intervals:
-                entry['after_rep'] = len(intervals)
-            recoveries.append(entry)
-    sets    = _group_into_sets(intervals, recoveries, set_gap_s=300)
-    summary = compute_interval_summary(intervals, recoveries)
+
+    # Compare early candidate bouts with the repeated work that follows.
+    # A warm-up ramp may itself contain above-threshold steps and recoveries.
+    intervals, recoveries = _exclude_indoor_warmup(
+        intervals, recoveries, ride_start_s=0, short_ratio=0.60
+    )
+    reason = _validate_interval_session(intervals, recoveries)
+    if reason:
+        return {"is_interval_session": False, "confidence": "medium",
+                "detection_method": "laps", "interval_rejection_reason": reason,
+                "intervals_detected": len(intervals)}
     return {
         "is_interval_session": True,
-        "confidence":          "high",
-        "detection_method":    "laps",
-        "interval_count":      len(intervals),
-        "sets":                sets,
-        "summary":             summary,
+        "confidence": "medium",
+        "detection_method": "laps",
+        "interval_count": len(intervals),
+        "sets": _group_into_sets(intervals, recoveries, set_gap_s=300),
+        "summary": compute_interval_summary(intervals, recoveries),
     }
 
 
@@ -384,23 +441,11 @@ def _structure_from_power_stream(
     )
 
     if is_indoor and time_data:
-        ride_start    = time_data[0]
-        warmup_cutoff = ride_start + INDOOR_WARMUP_S
-        before = len(intervals)
-        intervals = [iv for iv in intervals if iv.get('start_s', 0) >= warmup_cutoff]
-        if len(intervals) < before:
-            logger.info(
-                f"_structure_from_power_stream() stripped {before - len(intervals)} "
-                f"warmup interval(s) within first {INDOOR_WARMUP_S//60} min"
-            )
-            for i, iv in enumerate(intervals):
-                iv['rep_number'] = i + 1
-            stripped = before - len(intervals)
-            for r in recoveries:
-                if 'after_rep' in r:
-                    r['after_rep'] -= stripped
-                    if r['after_rep'] <= 0:
-                        del r['after_rep']
+        # Do not use a fixed ten-minute cutoff: trainer warm-ups often contain
+        # ramp steps beyond ten minutes that cross the power detection threshold.
+        intervals, recoveries = _exclude_indoor_warmup(
+            intervals, recoveries, ride_start_s=time_data[0]
+        )
 
     _strip_fringe_intervals(intervals, recoveries)
 
@@ -426,6 +471,69 @@ def _structure_from_power_stream(
         "sets":                sets,
         "summary":             summary,
     }
+
+
+
+def _exclude_indoor_warmup(
+    intervals: list, recoveries: list, ride_start_s: float,
+    short_ratio: float = 0.45,
+) -> tuple:
+    """Exclude an early ramp effort only when later repetitions establish a pattern.
+
+    Conservative by design: an early effort is retained if there is insufficient
+    evidence that it differs from the main work. Never discard a genuine first
+    interval simply because it occurs in the first ten minutes.
+    """
+    if len(intervals) < 3:
+        return intervals, recoveries
+
+    remaining = list(intervals)
+    while len(remaining) >= 3:
+        first = remaining[0]
+        later = remaining[1:]
+        # A warm-up candidate must start within the first 25 minutes.
+        if first.get('start_s', float('inf')) - ride_start_s > 1500:
+            break
+        powers = sorted(iv.get('avg_power_w', 0) for iv in later)
+        durations = sorted(iv.get('duration_s', 0) for iv in later)
+        typical_power = powers[len(powers) // 2]
+        typical_duration = durations[len(durations) // 2]
+        if not typical_power or not typical_duration:
+            break
+        # Ramp steps are normally shorter or materially easier than the
+        # repeated main efforts. Require two later comparable repetitions.
+        comparable = sum(
+            abs(iv.get('avg_power_w', 0) - typical_power) <= typical_power * 0.12
+            and abs(iv.get('duration_s', 0) - typical_duration) <= typical_duration * 0.30
+            for iv in later
+        )
+        is_ramp_step = (
+            first.get('avg_power_w', 0) < typical_power * 0.90
+            or first.get('duration_s', 0) < typical_duration * short_ratio
+        )
+        if comparable < 2 or not is_ramp_step:
+            break
+        logger.info("_exclude_indoor_warmup() excluded early ramp effort at %ss",
+                    first.get('start_s'))
+        remaining.pop(0)
+
+    removed = len(intervals) - len(remaining)
+    if not removed:
+        return intervals, recoveries
+
+    for index, iv in enumerate(remaining, 1):
+        iv['rep_number'] = index
+    # Recovery entries are still useful for the time series, but only
+    # recoveries between retained work intervals belong to interval analysis.
+    kept_recoveries = []
+    for recovery in recoveries:
+        after = recovery.get('after_rep')
+        if after is None or after <= removed or after >= len(intervals):
+            continue
+        r = dict(recovery)
+        r['after_rep'] = after - removed
+        kept_recoveries.append(r)
+    return remaining, kept_recoveries
 
 
 def _validate_interval_session(intervals: list, recoveries: list) -> Optional[str]:
@@ -588,29 +696,35 @@ def _strip_fringe_intervals(intervals: list, recoveries: list) -> None:
 
 
 def _group_into_sets(intervals: list, recoveries: list, set_gap_s: int = 300) -> list:
+    """Group by recovery.after_rep, never by the recovery list index.
+
+    Leading/trailing recovery blocks do not belong to a work set.
+    """
     if not intervals:
         return []
-    sets:               list = []
-    current_intervals:  list = [intervals[0]]
-    current_recoveries: list = []
-    for i, recovery in enumerate(recoveries):
-        if recovery['duration_s'] >= set_gap_s:
-            sets.append(_build_set(len(sets) + 1, current_intervals, current_recoveries))
-            current_intervals  = [intervals[i + 1]] if i + 1 < len(intervals) else []
-            current_recoveries = []
-        else:
-            current_recoveries.append(recovery)
-            if i + 1 < len(intervals):
-                current_intervals.append(intervals[i + 1])
-    if current_intervals:
-        sets.append(_build_set(len(sets) + 1, current_intervals, current_recoveries))
+    gaps = {r.get('after_rep'): r for r in recoveries
+            if isinstance(r.get('after_rep'), int)
+            and 1 <= r['after_rep'] < len(intervals)}
+    sets = []
+    work = [intervals[0]]
+    rests = []
+    for rep in range(1, len(intervals)):
+        recovery = gaps.get(rep)
+        if recovery and recovery.get('duration_s', 0) >= set_gap_s:
+            sets.append(_build_set(len(sets) + 1, work, rests))
+            work, rests = [], []
+        elif recovery:
+            rests.append(recovery)
+        work.append(intervals[rep])
+    if work:
+        sets.append(_build_set(len(sets) + 1, work, rests))
     return sets
 
 
 def _build_set(set_number: int, intervals: list, recoveries: list) -> dict:
-    set_max_hr    = max((iv.get('max_hr_bpm',       0) for iv in intervals), default=None)
-    set_max_power = max((iv.get('max_power_w',      0) for iv in intervals), default=None)
-    set_peak_cad  = max((iv.get('peak_cadence_rpm', 0) for iv in intervals), default=None)
+    set_max_hr    = max((iv.get('max_hr_bpm') or 0 for iv in intervals), default=None)
+    set_max_power = max((iv.get('max_power_w') or 0 for iv in intervals), default=None)
+    set_peak_cad  = max((iv.get('peak_cadence_rpm') or 0 for iv in intervals), default=None)
     return {
         'set_number':           set_number,
         'set_max_hr_bpm':       set_max_hr,
