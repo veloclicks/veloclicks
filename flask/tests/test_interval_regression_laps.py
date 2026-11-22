@@ -56,3 +56,45 @@ def test_four_sustained_threshold_reps():
         laps.append(lap([267, 209, 268, 314][i], 84))
     result = _structure_from_laps(laps)
     assert result["interval_count"] == 4
+
+
+def test_wheel_four_under_overs_are_three_work_sets():
+    # 14 Nov 2026: each set has six alternating high-power stages.
+    laps = [lap(180, 106), lap(179, 147), lap(179, 190), lap(206, 63)]
+    for i in range(3):
+        laps += [lap(119, 200), lap(59, 222),
+                 lap(119, 201), lap(59, 222),
+                 lap(119, 201), lap(59, 222)]
+        laps.append(lap(419 if i < 2 else 300, 85))
+    result = _structure_from_laps(laps)
+    assert result["interval_count"] == 3
+    assert result["summary"]["avg_interval_duration_s"] == pytest.approx(534, abs=1)
+
+
+def test_rogers_ignores_warmup_threshold_step():
+    laps = [lap(326, 79), lap(180, 152), lap(179, 203), lap(333, 85)]
+    for i in range(3):
+        laps += [lap(419, 215), lap(419 if i < 2 else 339, 85)]
+    result = _structure_from_laps(laps)
+    assert result["interval_count"] == 3
+    assert result["summary"]["avg_interval_duration_s"] == pytest.approx(419, abs=1)
+
+
+def test_mono_two_has_four_under_over_work_blocks():
+    laps = [lap(240, 106), lap(239, 137), lap(179, 179), lap(520, 84)]
+    for i in range(4):
+        laps += [lap(119, 200), lap(59, 222), lap(119, 201), lap(59, 222)]
+        laps.append(lap(299, 85))
+    result = _structure_from_laps(laps)
+    assert result["interval_count"] == 4
+    assert result["summary"]["avg_interval_duration_s"] == pytest.approx(356, abs=1)
+
+
+def test_townsend_endurance_laps_are_not_intervals():
+    laps = [lap(d, p) for d, p in [
+        (300, 106), (299, 109), (299, 120), (239, 129),
+        (599, 130), (179, 127), (479, 122), (179, 128),
+        (539, 133), (119, 135), (539, 137), (239, 128),
+        (479, 126), (40, 119)]]
+    result = _structure_from_laps(laps)
+    assert not result["is_interval_session"]
