@@ -78,15 +78,15 @@ Seconds (and percentage) spent in each HR zone:
 - `z5` Maximum: > 90% max HR
 
 ### `time_series`
-Array of 15-minute (endurance) or 5-minute (shorter) intervals, each with:
-- `t_min` — start time in minutes
-- `moving_time_s`, `power_data_s`, `hr_data_s` — data quality per interval
-- `avg_power_w`, `max_power_w`, `norm_power_w` — power metrics
+Array of fixed-length blocks; block length in seconds is given by `time_series_block_s` (30s for rides up to 2 hours, 15 minutes for longer rides). Interval sessions only include it for rides up to 2 hours. Each block has:
+- `t_s` — start time in seconds from the start of the ride
+- `moving_time_s`, `power_data_s`, `hr_data_s` — data quality per block
+- `avg_power_w`, `max_power_w`, `norm_power_w` — power metrics (NP is not meaningful for 30s blocks; use avg/max)
 - `avg_hr_bpm`, `max_hr_bpm` — HR metrics
-- `avg_cadence_rpm` — cadence
-- `avg_speed_kph` — speed
-- `avg_gradient_pct` — mean gradient (positive = uphill, negative = downhill)
-- `elevation_gain_m` — ascent within the interval
+- `avg_cadence_rpm`, `max_cadence_rpm` — cadence
+- `avg_speed_kph`, `max_speed_kph` — speed
+- `avg_gradient_pct`, `max_gradient_pct` — gradient (positive = uphill, negative = downhill)
+- `distance_km`, `elevation_gain_m` — distance and ascent within the block
 
 ---
 

@@ -31,12 +31,12 @@ class _NumpyEncoder(json.JSONEncoder):
 # Endurance / long ride report                                                   #
 # ============================================================================ #
 
-def generate_activity_report(user_id: str, activity_id: str) -> Optional[pd.DataFrame]:
+def generate_activity_report(user_id: str, activity_id: str, interval_seconds: int = 900) -> Optional[pd.DataFrame]:
     """
-    Generate a 15-minute interval performance report for a Strava activity.
+    Generate a block-by-block performance report for a Strava activity.
 
-    Returns a DataFrame with one row per 15-minute interval, or None if
-    streams are unavailable.
+    Returns a DataFrame with one row per `interval_seconds` block (default
+    15 minutes), or None if streams are unavailable.
     """
     logging.info(f"generate_activity_report() for user {user_id}, activity {activity_id}")
 
@@ -103,7 +103,6 @@ def generate_activity_report(user_id: str, activity_id: str) -> Optional[pd.Data
     else:
         df['power_w_np'] = float('nan')
 
-    interval_seconds = 15 * 60
     df['interval_idx'] = (df['elapsed_s'] // interval_seconds).astype(int)
 
     def norm_power(series: pd.Series) -> float:
@@ -121,8 +120,11 @@ def generate_activity_report(user_id: str, activity_id: str) -> Optional[pd.Data
         max_hr_bpm       = ('hr_bpm',        'max'),
         hr_data_s        = ('hr_bpm_valid',   'count'),
         avg_cadence_rpm  = ('cadence_rpm',   'mean'),
+        max_cadence_rpm  = ('cadence_rpm',   'max'),
         avg_speed_kph    = ('speed_kph',     'mean'),
+        max_speed_kph    = ('speed_kph',     'max'),
         avg_gradient_pct = ('gradient_pct',  'mean'),
+        max_gradient_pct = ('gradient_pct',  'max'),
         elapsed_start_s  = ('elapsed_s',     'min'),
         moving_time_s    = ('moving',        'sum'),
     ).reset_index()
@@ -147,9 +149,9 @@ def generate_activity_report(user_id: str, activity_id: str) -> Optional[pd.Data
         agg['elevation_gain_m'] = float('nan')
 
     def fmt_interval(start_s: float) -> str:
-        start_min = int(start_s // 60)
-        end_min   = start_min + 15
-        return f"{start_min // 60}:{start_min % 60:02d}-{end_min // 60}:{end_min % 60:02d}"
+        start = int(start_s // interval_seconds) * interval_seconds
+        end   = start + interval_seconds
+        return f"{start // 3600}:{start % 3600 // 60:02d}:{start % 60:02d}-{end // 3600}:{end % 3600 // 60:02d}:{end % 60:02d}"
 
     agg['interval']    = agg['elapsed_start_s'].apply(fmt_interval)
     agg['elapsed_min'] = (agg['elapsed_start_s'] // 60).astype(int)
@@ -157,7 +159,9 @@ def generate_activity_report(user_id: str, activity_id: str) -> Optional[pd.Data
     round_map = {
         'avg_power_w': 0, 'max_power_w': 0, 'norm_power_w': 0,
         'avg_hr_bpm': 0, 'max_hr_bpm': 0,
-        'avg_cadence_rpm': 0, 'avg_speed_kph': 1, 'avg_gradient_pct': 1,
+        'avg_cadence_rpm': 0, 'max_cadence_rpm': 0,
+        'avg_speed_kph': 1, 'max_speed_kph': 1,
+        'avg_gradient_pct': 1, 'max_gradient_pct': 1,
         'distance_km': 2, 'elevation_gain_m': 0,
         'moving_time_s': 0, 'power_data_s': 0, 'hr_data_s': 0,
     }
@@ -166,11 +170,12 @@ def generate_activity_report(user_id: str, activity_id: str) -> Optional[pd.Data
             agg[col] = agg[col].round(decimals)
 
     cols = [
-        'interval', 'elapsed_min', 'distance_km', 'moving_time_s',
+        'interval', 'elapsed_start_s', 'elapsed_min', 'distance_km', 'moving_time_s',
         'avg_power_w', 'max_power_w', 'norm_power_w', 'power_data_s',
         'avg_hr_bpm', 'max_hr_bpm', 'hr_data_s',
-        'avg_cadence_rpm', 'avg_speed_kph',
-        'avg_gradient_pct', 'elevation_gain_m',
+        'avg_cadence_rpm', 'max_cadence_rpm',
+        'avg_speed_kph', 'max_speed_kph',
+        'avg_gradient_pct', 'max_gradient_pct', 'elevation_gain_m',
     ]
     result = agg[cols].copy()
     logging.info(f"generate_activity_report() generated {len(result)} intervals")
@@ -245,9 +250,10 @@ def generate_activity_report_json(
     activity_id: str,
     pretty:      bool = True,
     output_dir:  Optional[str] = None,
+    interval_seconds: int = 900,
 ) -> str:
     """Fetch streams, build report, return JSON. Optionally write to file."""
-    df = generate_activity_report(user_id, activity_id)
+    df = generate_activity_report(user_id, activity_id, interval_seconds=interval_seconds)
     if df is None:
         return ""
     result = report_to_json(df, activity_id=activity_id, pretty=pretty)

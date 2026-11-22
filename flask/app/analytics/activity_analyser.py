@@ -28,6 +28,16 @@ from app.analytics import activity_power
 
 logger = logging.getLogger(__name__)
 
+DETAILED_MAX_DURATION_S = 120 * 60   # rides up to this length get fine-grained time_series blocks
+DETAILED_BLOCK_S        = 30
+DEFAULT_BLOCK_S         = 15 * 60
+
+
+def _block_seconds(activity) -> int:
+    """30s blocks for rides <= 120 min, otherwise 15-min blocks."""
+    secs = int(activity.elapsed_time or activity.moving_time or 0)
+    return DETAILED_BLOCK_S if secs <= DETAILED_MAX_DURATION_S else DEFAULT_BLOCK_S
+
 
 def _get_or_create_analytics(activity_id, user_id):
     """Get or create an ActivityAnalytics record for the given activity."""
@@ -139,7 +149,8 @@ def analyse_activity(user_id: int, activity_id: int, mode: str = 'structure') ->
                 )
                 metrics_payload = {**metrics_payload, **advanced}
         else:
-            raw = activity_report_module.generate_activity_report_json(user_id, activity_id)
+            raw = activity_report_module.generate_activity_report_json(
+                user_id, activity_id, interval_seconds=_block_seconds(activity))
             metrics_payload = json.loads(raw) if raw else {}
 
         metrics = {
@@ -341,6 +352,8 @@ def _build_llm_payload(activity, analytics, user_id: int, identification: dict, 
     ES_DROP    = {'avg_interval_power_w', 'session_max_power_w', 'avg_end_hr_bpm_last_rep', 'recovery_power_w'}
     FLAGS_DROP = {'power_fade_flag', 'cadence_collapse_flag', 'insufficient_hr_response_flag', 'late_fatigue_flag'}
 
+    block_s = _block_seconds(activity)
+
     if workout_type in ('threshold', 'vo2'):
         reps = []
         for s in data.get('sets', []):
@@ -360,11 +373,21 @@ def _build_llm_payload(activity, analytics, user_id: int, identification: dict, 
             'benefit_assessment': data.get('benefit_assessment'),
             'flags':              {k: v for k, v in raw_flags.items() if k not in FLAGS_DROP},
         }
+
+        # Interval sessions only get a time_series when it can be fine-grained
+        segments = []
+        if block_s == DETAILED_BLOCK_S:
+            df = activity_report_module.generate_activity_report(user_id, activity.id, interval_seconds=block_s)
+            if df is not None:
+                segments = json.loads(activity_report_module.report_to_json(df))['intervals']
     else:
         segments = data.get('intervals', [])
+
+    if segments:
+        payload['time_series_block_s'] = block_s
         payload['time_series'] = [
             {
-                't_min':            seg.get('elapsed_min'),
+                't_s':              seg.get('elapsed_start_s'),
                 'moving_time_s':    seg.get('moving_time_s'),
                 'avg_power_w':      seg.get('avg_power_w'),
                 'max_power_w':      seg.get('max_power_w'),
@@ -374,12 +397,18 @@ def _build_llm_payload(activity, analytics, user_id: int, identification: dict, 
                 'max_hr_bpm':       seg.get('max_hr_bpm'),
                 'hr_data_s':        seg.get('hr_data_s'),
                 'avg_cadence_rpm':  seg.get('avg_cadence_rpm'),
+                'max_cadence_rpm':  seg.get('max_cadence_rpm'),
                 'avg_speed_kph':    seg.get('avg_speed_kph'),
+                'max_speed_kph':    seg.get('max_speed_kph'),
                 'avg_gradient_pct': seg.get('avg_gradient_pct'),
+                'max_gradient_pct': seg.get('max_gradient_pct'),
+                'distance_km':      seg.get('distance_km'),
                 'elevation_gain_m': seg.get('elevation_gain_m'),
             }
             for seg in segments
         ]
+
+    if workout_type not in ('threshold', 'vo2'):
         whole_ride_metrics['pw_hr_decoupling_pct'] = _pw_hr_decoupling(segments)
         whole_ride_metrics['power_data_s']         = sum(s.get('power_data_s') or 0 for s in segments)
         whole_ride_metrics['hr_data_s']            = sum(s.get('hr_data_s')    or 0 for s in segments)
