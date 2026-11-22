@@ -16,6 +16,21 @@
 
 **Organise code by responsibility; choose deployment boundaries separately.** Flask is welcome as an HTTP framework. Zappa is to be retired. AWS SAM is the preferred AWS deployment tool for now, but application logic must not depend on SAM, Lambda event formats or AWS SDKs.
 
+## Module deployment matrix — As-Is vs To-Be
+
+| Module | Features | Local deployment | Production (As-Is) | Production (To-Be) |
+| --- | --- | --- | --- | --- |
+| **Frontend** | UI, dashboards, activity visualisation | Next.js (`npm run dev`) | Vercel | Vercel |
+| **Auth** | Veloclicks login, registration, token management | SAM local / Docker | AWS Lambda / SAM | AWS Lambda / SAM |
+| **Profile** | User settings, FTP, training zones | Flask / Docker | Flask / Zappa / Lambda | Flask / SAM / Lambda |
+| **Strava** | OAuth authentication, access/refresh tokens, activity synchronisation, stream retrieval | Flask / Docker | Flask / Zappa / Lambda | Flask / SAM / Lambda |
+| **Analytics** | Activity classification, interval detection, granular snapshots, power metrics (power curve, power zones, TSS), activity summaries | Flask / Docker | Flask / Zappa / Lambda | Flask / SAM / Lambda |
+| **Coach** | AI coaching, activity interpretation, training recommendations | Docker | AWS Lambda / SAM | AWS Lambda / SAM |
+| **Admin** | Administration, maintenance | Flask / Docker | Flask / Zappa / Lambda | Flask / SAM / Lambda |
+| **Database** | PostgreSQL, user and activity data | PostgreSQL / Docker | Existing PostgreSQL hosting | Existing PostgreSQL hosting |
+
+**Note:** The To-Be column is a proposal. The Flask modules currently run through Zappa; the proposed migration replaces Zappa with SAM without necessarily splitting the Flask application into separate functions.
+
 ## Current architecture (as documented)
 
 - **Frontend:** Next.js on Vercel; Git push triggers deployment.
