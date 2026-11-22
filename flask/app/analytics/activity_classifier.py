@@ -335,12 +335,17 @@ def _structure_from_laps(laps: list) -> dict:
     # requires subsequent repeated work, so it does not discard the first
     # interval of sessions that begin immediately with work.
     start = 0
+    elapsed = 0
     for i, lap in enumerate(laps[:-2]):
+        elapsed += float(lap.get('elapsed_time') or 0)
+        if elapsed > 1500:
+            break
         if (float(lap.get('elapsed_time') or 0) >= 180
                 and powers[i] < recovery_floor
                 and sum(p >= work_floor for p in powers[i + 1:]) >= 3):
+            # Use the last qualifying warm-up recovery, not the first:
+            # a stepped warm-up can include several low-power stages.
             start = i + 1
-            break
 
     intervals, recoveries = [], []
     current = []
