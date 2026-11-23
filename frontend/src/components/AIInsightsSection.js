@@ -127,8 +127,19 @@ const AIInsightsSection = ({ activityId, isPremiumUser, colors }) => {
 
             {activeTab === 'insight' && (
               insights ? (
-                <div className="prose prose-xs max-w-none" style={{ color: colors.foreground }}>
-                  <div className="whitespace-pre-wrap">{insights}</div>
+                <div className="space-y-4 text-sm leading-relaxed" style={{ color: colors.foreground }}>
+                  {typeof insights === 'object' && insights !== null ? (
+                    <>
+                      <h4 className="text-lg font-semibold">{insights.headline}</h4>
+                      <p className="whitespace-pre-wrap">{insights.analysis}</p>
+                      <div className="pt-3 border-t" style={{ borderColor: colors.border }}>
+                        <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: colors.mutedForeground }}>Takeaway</p>
+                        <p>{insights.takeaway}</p>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="whitespace-pre-wrap">{String(insights).replace(/\\*\\*/g, '')}</div>
+                  )}
                 </div>
               ) : (
                 <div className="text-center py-8">
