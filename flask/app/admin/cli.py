@@ -486,28 +486,27 @@ def calculate_tss_command(user_id, year, month, skip_existing):
 @admin.command('activity-coach-insights')
 @click.option('--user-id', required=True, type=int, help='User ID')
 @click.option('--activity-id', required=True, type=int, help='Activity ID')
-@click.option('--detail-level', type=click.Choice(['simple', 'detailed']), default='simple', help='Level of detail: simple (quick, default) or detailed (comprehensive)')
 @with_appcontext
-def activity_insights(user_id, activity_id, detail_level):
+def activity_insights(user_id, activity_id):
     """
     Generate AI-powered insights for an activity (CLI command).
     """
     click.echo("=" * 80)
-    click.echo(f"ACTIVITY INSIGHTS - User: {user_id}, Activity: {activity_id}, Detail: {detail_level}")
+    click.echo(f"ACTIVITY INSIGHTS - User: {user_id}, Activity: {activity_id}")
     click.echo("=" * 80)
 
     try:
-        result = generate_activity_insight(user_id, activity_id, detail_level, get_coaching)
+        result = generate_activity_insight(user_id, activity_id, get_coaching)
     except CoachingError as error:
         click.echo(f"Error: {error.message}", err=True)
         return
 
     if "token_usage" not in result:
-        click.echo("\n[Cached]\n" + result["coaching"])
+        click.echo("\n[Cached]\n" + (json.dumps(result["coaching"], indent=2) if isinstance(result["coaching"], dict) else result["coaching"]))
         click.echo("=" * 80)
         return
 
-    click.echo("\n" + result['coaching'])
+    click.echo("\n" + (json.dumps(result['coaching'], indent=2) if isinstance(result['coaching'], dict) else result['coaching']))
     click.echo("\n" + "=" * 80)
     if usage := result.get('token_usage'):
         click.echo(f"Token Usage: {usage['total_tokens']:,} total ({usage['input_tokens']:,} in, {usage['output_tokens']:,} out)")
