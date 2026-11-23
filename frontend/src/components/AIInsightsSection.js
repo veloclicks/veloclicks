@@ -138,7 +138,7 @@ const AIInsightsSection = ({ activityId, isPremiumUser, colors }) => {
                       </div>
                     </>
                   ) : (
-                    <div className="whitespace-pre-wrap">{String(insights).replace(/\\*\\*/g, '')}</div>
+                    <div className="whitespace-pre-wrap">{String(insights).replaceAll("**", "")}</div>
                   )}
                   <button onClick={() => handleGenerate(true)} disabled={loading}
                     className="text-xs underline disabled:opacity-50" style={{ color: colors.mutedForeground }}>
