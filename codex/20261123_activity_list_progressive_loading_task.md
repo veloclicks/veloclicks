@@ -1,7 +1,8 @@
 # Task proposal — Load the first activity page before older rides
 
 **Date:** 2026-11-23  
-**Status:** Proposed for independent review
+**Status:** Approved for implementation
+**Approved by:** Patrick, 2026-11-23 at 19:49 GMT (Europe/London)
 
 ## Problem
 
@@ -32,3 +33,14 @@ The production smoke account returned two rides in 0.19 seconds. That does not e
 - Changing years, refreshing after sync, or changing sessions while a batch is in flight cannot append stale results. A failed continuation preserves loaded rides.
 - The existing unpaginated callers and demo mode still work.
 - Compare first-page latency and request count against the current full-list path. Review whether 50-row continuation batches are a good tradeoff for Lambda invocations and total loading time.
+
+## Implementation and verification
+
+Implemented locally. Production rollout is pending. Apply the index migration and deploy Flask before publishing the frontend that requests cursor pages.
+
+- Four targeted Flask tests passed. They cover 0, 12, 50, and 500 rides, tied timestamps, cursor invalidation, the rolling date range, and the legacy response.
+- A local Chrome regression check with synthetic responses verified that the first page appears while a continuation is delayed, a retry resumes from the failed cursor, and a year change discards a stale response. Searching 500 loaded rides for `threshold` produced 73 matches across two display pages with no search or paging requests.
+- On local PostgreSQL, a 50,000-row synthetic table with 500 rides for the test user scanned the table before the index. With the index, the first-page query used a backward index scan. Execution took 0.051 ms for the first batch versus 0.219 ms for the full indexed list in this run.
+- In a local Flask test-client benchmark with 500 synthetic rides, median response time was 3.29 ms for the first 50 versus 21.40 ms for all 500. The response sizes were 32,745 and 299,895 bytes. These checks exclude network and Lambda cold-start time.
+- Loading all 500 rides takes ten successful requests instead of one. Review that invocation tradeoff against production first-page latency before tuning the continuation batch size.
+- The broader Flask suite still has one unrelated coaching prompt assertion failure, reproduced on the unchanged baseline.

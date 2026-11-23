@@ -1,6 +1,6 @@
 from sqlalchemy import Column, String, Integer, BigInteger, ForeignKey, Float, Text, Boolean, DateTime
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import ForeignKeyConstraint
+from sqlalchemy import ForeignKeyConstraint, Index
 
 from .db import db
 from .user import User
@@ -12,7 +12,8 @@ class Activity(db.Model):
     
     id = Column(BigInteger, primary_key=True)
     __table_args__ = (        
-        ForeignKeyConstraint([user_id], [User.id], ondelete='NO ACTION'),        
+        ForeignKeyConstraint([user_id], [User.id], ondelete='NO ACTION'),
+        Index('ix_vc_strava_activity_user_date_id', 'user_id', 'start_date', 'id'),
     )
    
     # Basics

@@ -1,8 +1,8 @@
 'use client';
-import React, { useState, useMemo, useEffect, Suspense } from 'react';
+import React, { useState, useMemo, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Navigation from '../../components/Navigation';
-import { ChevronUp, ChevronDown, Filter, TrendingUp, Activity, RefreshCw, User } from 'lucide-react';
+import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Filter, TrendingUp, Activity, RefreshCw, User } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../../contexts/AuthContext';
 import { demoActivitiesData } from '../../data/demoActivities';
@@ -16,6 +16,9 @@ const ActivitiesContent = () => {
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [olderError, setOlderError] = useState(false);
+  const retryOlder = useRef(null);
   const [page, setPage] = useState(1);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
@@ -68,11 +71,14 @@ const ActivitiesContent = () => {
     setLoading(true);
     setError(null);
     setPage(1);
+    setActivities([]);
+    setLoadingOlder(false);
+    setOlderError(false);
+    retryOlder.current = null;
 
     // Auth initializes on mount. A profile update for the same email does
     // not require a second activity request.
     if (!useDemoData && (!isAuthenticated || !token)) {
-      setActivities([]);
       return;
     }
 
@@ -85,47 +91,67 @@ const ActivitiesContent = () => {
     }
 
     const controller = new AbortController();
-    async function fetchActivities() {
-      try {
-        let url = `${process.env.NEXT_PUBLIC_API_URL}/strava/activities/`;
-        if (selectedYears.length) {
-          url += `?years=${selectedYears.join(',')}`;
-        }
-        const response = await fetch(url, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          signal: controller.signal,
-        });
-        if (!response.ok) {
-          throw new Error('Failed to fetch activities');
-        }
-        const data = await response.json();
-        if (controller.signal.aborted) return;
+    const isCurrent = () => !controller.signal.aborted && localStorage.getItem('authToken') === token;
 
-        setActivities(data.map(activity => ({
-          id: activity.id,
-          name: activity.name,
-          dateTime: activity.start_date_local || activity.start_date,
-          elapsedTime: Math.round((activity.elapsed_time || 0) / 60),
-          distance: activity.distance || 0,
-          avgSpeed: activity.average_speed || 0,
-          elevationGain: activity.total_elevation_gain || 0,
-          avgPower: activity.average_watts || 0,
-          normalisedPower: activity.weighted_average_watts || 0,
-        })));
+    async function loadPages(cursor = null) {
+      if (!isCurrent()) return;
+      try {
+        do {
+          const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
+          if (selectedYears.length) params.set('years', selectedYears.join(','));
+          if (cursor) params.set('cursor', cursor);
+
+          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/strava/activities/?${params}`, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+          });
+          if (!response.ok) throw new Error('Failed to fetch activities');
+
+          const { activities: rows, next_cursor: nextCursor } = await response.json();
+          if (!isCurrent()) return;
+          const batch = rows.map(activity => ({
+            id: activity.id,
+            name: activity.name,
+            dateTime: activity.start_date_local || activity.start_date,
+            elapsedTime: Math.round((activity.elapsed_time || 0) / 60),
+            distance: activity.distance || 0,
+            avgSpeed: activity.average_speed || 0,
+            elevationGain: activity.total_elevation_gain || 0,
+            avgPower: activity.average_watts || 0,
+            normalisedPower: activity.weighted_average_watts || 0,
+          }));
+
+          if (cursor) {
+            setActivities(previous => [...previous, ...batch]);
+          } else {
+            setActivities(batch);
+            setLoading(false);
+          }
+          cursor = nextCursor;
+          setLoadingOlder(Boolean(cursor));
+        } while (cursor);
       } catch (err) {
-        if (!controller.signal.aborted) {
+        if (!isCurrent()) return;
+        if (cursor) {
+          // Retain earlier batches and resume at the failed cursor on retry.
+          const failedCursor = cursor;
+          retryOlder.current = () => {
+            retryOlder.current = null;
+            setOlderError(false);
+            setLoadingOlder(true);
+            loadPages(failedCursor);
+          };
+          setLoadingOlder(false);
+          setOlderError(true);
+        } else {
           setError(err.message);
-          console.error('Failed to fetch activities:', err);
+          setLoading(false);
         }
-      } finally {
-        if (!controller.signal.aborted) setLoading(false);
+        console.error('Failed to fetch activities:', err);
       }
     }
 
-    fetchActivities();
+    loadPages();
     return () => controller.abort();
   }, [selectedYears, isAuthenticated, isDemoMode, userEmail, refreshVersion]);
 
@@ -255,6 +281,19 @@ const ActivitiesContent = () => {
             <p role="alert" className="text-sm mt-2" style={{ color: colors.accent }}>
               Error: {error}
             </p>
+          )}
+          {loadingOlder && (
+            <p role="status" className="text-sm mt-2" style={{ color: colors.primary }}>
+              Loading older activities. Search covers the rides loaded so far.
+            </p>
+          )}
+          {olderError && (
+            <div className="mt-2 flex items-center gap-2 text-sm" style={{ color: colors.accent }}>
+              <p role="alert">Could not load older activities. Search covers the rides loaded so far.</p>
+              <button type="button" className="underline" onClick={() => retryOlder.current?.()}>
+                Retry
+              </button>
+            </div>
           )}
         </div>
 
@@ -413,7 +452,8 @@ const ActivitiesContent = () => {
 
         {showResults && matchCount === 0 && (
           <p role="status" style={{ color: colors.mutedForeground }}>
-            {activities.length ? 'No activities match your filters.' : 'No activities found for this date range.'}
+            {loadingOlder || olderError ? 'No matches among the activities loaded so far.' :
+              activities.length ? 'No activities match your filters.' : 'No activities found for this date range.'}
           </p>
         )}
 
@@ -428,6 +468,23 @@ const ActivitiesContent = () => {
                 Showing {pageStart + 1}–{pageStart + visibleActivities.length} of {matchCount}
                 {matchCount === activities.length ? ' activities' : ` matches (${activities.length} activities loaded)`}
               </p>
+              {pageCount > 1 && (
+                <nav aria-label="Top activity list pagination"
+                  className="ml-4 flex shrink-0 items-center gap-1 text-sm font-medium"
+                  style={{ color: colors.foreground }}>
+                  <button type="button" aria-label="Previous page" disabled={currentPage === 1}
+                    onClick={() => setPage(currentPage - 1)}
+                    className="rounded p-1 hover:opacity-70 disabled:opacity-40">
+                    <ChevronLeft aria-hidden="true" className="h-4 w-4" />
+                  </button>
+                  <span>{currentPage} of {pageCount}</span>
+                  <button type="button" aria-label="Next page" disabled={currentPage === pageCount}
+                    onClick={() => setPage(currentPage + 1)}
+                    className="rounded p-1 hover:opacity-70 disabled:opacity-40">
+                    <ChevronRight aria-hidden="true" className="h-4 w-4" />
+                  </button>
+                </nav>
+              )}
             </div>
           </div>
           

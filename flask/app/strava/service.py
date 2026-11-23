@@ -3,6 +3,7 @@ from calendar import monthrange
 import math
 import logging
 from flask import current_app
+from sqlalchemy import tuple_
 from app.models import db, User, Activity
 from app.strava.constants import (
     SYNCH_WINDOW_DAYS,
@@ -152,14 +153,33 @@ def sync_activities_by_month(user_id, year, month=None):
     }
 
 
-def get_stored_activities(user_id, start_date=None, end_date=None):
-    """Query stored activities from DB with optional date filters."""
+def _stored_activity_query(user_id, start_date, end_date):
+    """Scope stored activities to their owner and the requested date bounds."""
     query = db.session.query(Activity).filter(Activity.user_id == user_id)
     if start_date:
         query = query.filter(Activity.start_date >= start_date)
     if end_date:
         query = query.filter(Activity.start_date <= end_date)
-    return query.order_by(Activity.start_date.desc()).all()
+    return query
+
+
+def get_stored_activities(user_id, start_date=None, end_date=None):
+    """Return all stored activities in the date range for existing callers."""
+    return _stored_activity_query(user_id, start_date, end_date).order_by(
+        Activity.start_date.desc()
+    ).all()
+
+
+def get_stored_activity_page(user_id: int, start_date: datetime, end_date: datetime,
+                             limit: int, before: tuple[datetime, int] | None
+                             ) -> tuple[list[Activity], bool]:
+    """Return a bounded page and whether a continuation exists."""
+    query = _stored_activity_query(user_id, start_date, end_date)
+    if before is not None:
+        # The ID breaks ties when several rides share the same start time.
+        query = query.filter(tuple_(Activity.start_date, Activity.id) < before)
+    rows = query.order_by(Activity.start_date.desc(), Activity.id.desc()).limit(limit + 1).all()
+    return rows[:limit], len(rows) > limit
 
 
 def get_activity_streams(user_id, activity_id, stream_types=None):

@@ -3,8 +3,9 @@ import os
 import logging
 from dotenv import load_dotenv
 
-from flask import jsonify, Blueprint, request, g, redirect
+from flask import jsonify, Blueprint, request, g, redirect, current_app
 from app.common.auth import require_auth
+from itsdangerous import BadData, URLSafeSerializer
 
 load_dotenv()
 from app.models import db, User, Activity, ActivityAnalytics
@@ -76,6 +77,16 @@ def strava_synch():
 @strava_bp.route('/activities/')
 @require_auth
 def strava_activities():
+    """Return the legacy list or a cursor page when the client requests a limit."""
+    limit_param = request.args.get('limit')
+    cursor = request.args.get('cursor')
+    if limit_param is None and cursor is not None:
+        return jsonify(error="Cursor requires a limit"), 400
+    if limit_param is not None:
+        limit = request.args.get('limit', type=int)
+        if limit is None or not 1 <= limit <= 50:
+            return jsonify(error="Limit must be between 1 and 50"), 400
+
     years_param = request.args.get('years')
 
     if years_param:
@@ -90,8 +101,34 @@ def strava_activities():
         start_date = now - timedelta(days=180)
         end_date = now
 
-    activities = service.get_stored_activities(g.user_id, start_date, end_date)
-    return jsonify([a.to_dict() for a in activities])
+    if limit_param is None:
+        activities = service.get_stored_activities(g.user_id, start_date, end_date)
+        return jsonify([a.to_dict() for a in activities])
+
+    signer = URLSafeSerializer(current_app.config["SECRET_KEY"], salt="activity-list-cursor")
+    scope = [g.user_id, years_param or ""]
+    before = None
+    if cursor is not None:
+        try:
+            cursor_scope, window_end, date, activity_id = signer.loads(cursor)
+            if cursor_scope != scope:
+                return jsonify(error="Invalid activity cursor"), 400
+            # The rolling 180-day window must stay fixed across continuations.
+            if not years_param:
+                end_date = datetime.fromisoformat(window_end)
+                start_date = end_date - timedelta(days=180)
+            before = (datetime.fromisoformat(date), activity_id)
+        except (BadData, TypeError, ValueError):
+            return jsonify(error="Invalid activity cursor"), 400
+
+    activities, has_more = service.get_stored_activity_page(
+        g.user_id, start_date, end_date, limit, before
+    )
+    next_cursor = None
+    if has_more:
+        last = activities[-1]
+        next_cursor = signer.dumps([scope, end_date.isoformat(), last.start_date.isoformat(), last.id])
+    return jsonify(activities=[a.to_dict() for a in activities], next_cursor=next_cursor)
 
 
 # -------------------------------------------------------------------------------------------
