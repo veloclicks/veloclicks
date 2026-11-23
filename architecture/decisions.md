@@ -22,6 +22,5 @@
 | Decision | Rationale |
 | --- | --- |
 | Keep Docker Compose as the primary local development workflow. | Run and test the application without requiring AWS deployment. |
-| Retain AWS Lambda for production for now and replace Zappa with AWS SAM; review deployment boundaries using evidence. | Prefer low operating cost and manageable deployment without treating current Lambda boundaries as permanent. |
 
 Implementation details such as the Flask WSGI adapter, which modules share a deployment, and database hosting are proposals in [README.md](README.md), not decisions recorded here.
