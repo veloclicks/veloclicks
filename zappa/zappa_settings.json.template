@@ -13,7 +13,7 @@
         },
         "keep_warm": false,
         "memory_size": 512,
-        "timeout_seconds": 30,
+        "timeout_seconds": 70,
         "exclude": ["*.pyc", "__pycache__"],
         "include": ["../flask/"]
     },

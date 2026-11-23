@@ -54,6 +54,9 @@ Migrated from a legacy `.claudecode/prompts.md` (not read by current tooling —
 Agreed order of work, 2026-03-25, with Patrick's current priorities (Aug 2026) placed at the top. Push back if Patrick goes off-piste. (Re-verify against current code before treating as current state — most of this list is from March and hasn't been fully re-checked since.)
 
 ## Priorities (current)
+
+**2026-11-23:** Prioritise the activity-list UI before coaching performance work. Fix the premature zero count and overlapping requests after login. Keep search responsive across all loaded rides and paginate the matching rows in the browser.
+
 1. Move to more lambdas to reduce startup time, cost and increase responsiveness for prod
 2. Move away from Zappa in production because it is too error prone — prefer Lambda as much as possible, but wary of breaking everything
 3. Improve activity page features — showing a proper power graph
@@ -79,6 +82,7 @@ Agreed order of work, 2026-03-25, with Patrick's current priorities (Aug 2026) p
 15. UI polish — easier navigation, activity detail page improvements
 
 ## Analytics — Future
+20. Reuse deterministic activity analytics when regenerating coaching feedback. Reuse valid classification, execution metrics and heart-rate zone calculations across prompt edits. Recompute when ride data, relevant athlete settings or the analytics algorithm changes. Keep regeneration responsible for requesting fresh coaching feedback.
 19. Review heart-rate zone calculation and coaching interpretation — identify whether zones are derived from maximum HR, heart-rate reserve or measured thresholds; validate default boundaries and allow athlete-specific zones where appropriate. Distinguish compliance with configured HR zones from physiological endurance intensity, so the coach does not automatically label a ride as too hard solely because time falls in app-defined Z3.
 16. Climb detection — detect sustained positive-gradient segments from the elevation/GPS stream and attach per-climb metrics (start/end time, duration, distance, elevation gain, avg gradient, avg power, NP, avg HR, avg cadence, avg speed) to the activity payload. Goal: let the coach separate climbing performance from flat riding, track climbing fitness over time, and flag pacing differences on climbs vs flats.
 17. Force-recompute analytics via API — add `?force=true` query param to `GET /ai-coach/activity/<id>/summary` that clears cached `ActivityAnalytics` fields (`power_curve_data`, `time_in_zones`) and recomputes everything fresh. Useful after algorithm changes without needing CLI access.

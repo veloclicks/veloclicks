@@ -24,7 +24,7 @@ Resources:
       CodeUri: coach/
       Handler: lambda_function.lambda_handler
       Runtime: python3.11
-      Timeout: 30
+      Timeout: 55
       MemorySize: 512
       Environment:
         Variables:
