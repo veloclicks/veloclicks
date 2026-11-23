@@ -72,3 +72,30 @@ Patrick approved **testing Option A** for the standalone Activities read Lambda,
 - Package only required dependencies. Verify that authentication and database configuration do not introduce their own costly startup imports or synchronous lookups. Keep secrets and cursor signing compatible with the existing API.
 - Benchmark cold and warm requests and first-visible-rows time against Zappa, including connection establishment and follow-on page requests. The objective is to remove the observed ~15-second Zappa startup overhead, not to redesign the whole database layer.
 - Do **not** change frontend routing or production traffic until the prototype's results have been reviewed. Preserve the existing endpoint as fallback.
+
+## Option A prototype results — 2026-11-23
+
+Implemented the read-only API Gateway handler in `aws/lambdas/activities/` and a separate `aws/lambdas/template.activities-prototype.yaml` for an isolated benchmark. The existing Flask activity route, ORM model, production SAM stack template, and frontend routing are unchanged. The prototype requires an explicit `limit` from 1 to 50. Existing array callers stay on Flask.
+
+- The SQLAlchemy Core table projection, value formatting, date-window parser and cursor codec intentionally mirror the Flask implementation for this experiment. The parity tests guard these duplicated contracts. Both adapters use the same JWT verifier. The lightweight adapter imports neither Flask, SQLAlchemy, the PostgreSQL driver, nor password hashing until needed. The connection pool is opened lazily and reused. The database URL and signing key are supplied via environment variables, with no runtime SSM lookups.
+- Fourteen targeted tests and fifteen subtests passed. Coverage includes bidirectional cursor exchange, equal timestamps, dates and nulls, numeric rounding, full histories, the rolling date window, cross-user cursor rejection and access-token compatibility.
+- The isolated SAM host build passed with Linux x86_64 wheels. The installed SAM builder could not resolve the latest transitive greenlet wheel, so the prototype pins a compatible wheel. The unpacked package is approximately 18 MiB.
+- Five fresh local Linux Python processes per adapter queried the same 500 synthetic rides in an isolated PostgreSQL schema. Both retrieved all 500 in ten pages. Median timings are below.
+
+| Phase | Standalone prototype | Flask |
+| --- | ---: | ---: |
+| Process imports and app or engine setup | 587 ms | 2,193 ms |
+| First PostgreSQL connection | 26 ms | 27 ms |
+| First page after connecting | 17 ms | 36 ms |
+| Warm first page | 7 ms | 8 ms |
+| Remaining nine pages | 76 ms | 100 ms |
+
+These local results exclude Lambda runtime initialisation, Zappa’s S3 archive load, production SSM and database network latency, API Gateway, and browser rendering. The previous production Zappa timings above are the baseline for an isolated AWS and browser comparison. The prototype has not been deployed to AWS, and no production traffic has moved. Review the local results before authorising an AWS benchmark endpoint or deciding on a cutover.
+
+## Production cutover — 2026-11-23
+
+Patrick authorised moving production activity-list traffic to the standalone Lambda and reserved the rollback decision. The stack `veloclicks-activities-prod` serves `https://1m4c74owqj.execute-api.eu-west-2.amazonaws.com/Prod`. It uses a separate stack and a PostgreSQL connection configured read-only. No Zappa or Auth/Coach redeployment is needed. The dedicated endpoint accepts CORS from `veloclicks-prod.vercel.app`.
+
+Before switching the frontend, an authenticated production comparison matched the first page and signed cursor against Flask and verified continuation in both directions, CORS, and unauthorized rejection. One first-request comparison measured 7.0 seconds on the new endpoint and 17.3 seconds on Zappa. A warm standalone first page took 0.22 seconds. These are individual samples.
+
+The canonical production frontend uses the standalone endpoint for paginated activities. Local and demo use the existing Flask API. The optional `NEXT_PUBLIC_ACTIVITIES_API_URL` setting can override the list URL. To roll back traffic if Patrick decides, restore the previous Vercel production deployment or point that variable at the Flask base URL and redeploy the frontend. Leave the Flask endpoint available and keep the new stack intact during a traffic rollback.

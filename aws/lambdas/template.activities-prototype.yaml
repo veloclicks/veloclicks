@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Standalone paginated Activities API
+
+Parameters:
+  DatabaseUrl:
+    Type: String
+    NoEcho: true
+  SecretKey:
+    Type: String
+    NoEcho: true
+  CorsOrigin:
+    Type: String
+    Default: 'http://localhost:3000'
+
+Resources:
+  ActivitiesPrototype:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: activities/
+      Handler: handler.handler
+      Runtime: python3.11
+      MemorySize: 256
+      Timeout: 10
+      Environment:
+        Variables:
+          DATABASE_URL: !Ref DatabaseUrl
+          SECRET_KEY: !Ref SecretKey
+          CORS_ORIGIN: !Ref CorsOrigin
+      Events:
+        List:
+          Type: Api
+          Properties:
+            Path: /strava/activities/
+            Method: get
+        Preflight:
+          Type: Api
+          Properties:
+            Path: /strava/activities/
+            Method: options
+
+Outputs:
+  ActivitiesApiUrl:
+    Description: Base URL for the paginated Activities API
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"

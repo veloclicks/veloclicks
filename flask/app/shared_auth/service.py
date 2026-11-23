@@ -7,6 +7,8 @@ from typing import Protocol
 import jwt
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from .verification import access_token_user_id as access_token_user_id
+
 
 @dataclass(frozen=True)
 class Credentials:
@@ -98,12 +100,3 @@ class AuthService:
             "sub": user.id, "user_id": user.id, "type": "refresh",
             "iat": now, "exp": now + timedelta(days=self.refresh_days),
         }, self.secret, algorithm="HS256")
-
-
-def access_token_user_id(token: str, secret: str) -> int:
-    """Return the user ID from either access-token format and reject refresh tokens."""
-    payload = jwt.decode(token, secret, algorithms=["HS256"],
-                         options={"require": ["exp", "user_id"]})
-    if payload.get("type", "access") != "access" or type(payload["user_id"]) is not int:
-        raise jwt.InvalidTokenError("Invalid access token")
-    return payload["user_id"]

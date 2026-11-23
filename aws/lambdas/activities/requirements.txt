@@ -1,0 +1,6 @@
+SQLAlchemy==2.0.45
+psycopg2-binary==2.9.9
+PyJWT==2.8.0
+itsdangerous==2.2.0
+# SQLAlchemy installs greenlet on x86_64. Keep a wheel compatible with the SAM host builder.
+greenlet==3.1.1

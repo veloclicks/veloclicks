@@ -8,6 +8,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { demoActivitiesData } from '../../data/demoActivities';
 
 const PAGE_SIZE = 50;
+const PRODUCTION_ACTIVITIES_API_URL = 'https://1m4c74owqj.execute-api.eu-west-2.amazonaws.com/Prod';
 
 const ActivitiesContent = () => {
   const searchParams = useSearchParams();
@@ -90,6 +91,10 @@ const ActivitiesContent = () => {
       return;
     }
 
+    const apiUrl = process.env.NEXT_PUBLIC_ACTIVITIES_API_URL ||
+      (window.location.hostname === 'veloclicks-prod.vercel.app'
+        ? PRODUCTION_ACTIVITIES_API_URL
+        : process.env.NEXT_PUBLIC_API_URL);
     const controller = new AbortController();
     const isCurrent = () => !controller.signal.aborted && localStorage.getItem('authToken') === token;
 
@@ -101,7 +106,7 @@ const ActivitiesContent = () => {
           if (selectedYears.length) params.set('years', selectedYears.join(','));
           if (cursor) params.set('cursor', cursor);
 
-          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/strava/activities/?${params}`, {
+          const response = await fetch(`${apiUrl}/strava/activities/?${params}`, {
             headers: { Authorization: `Bearer ${token}` },
             signal: controller.signal,
           });
