@@ -36,14 +36,14 @@ from sqlalchemy import extract
 from app.models import db
 from app.models.strava import Activity
 from app.models.analytics import ActivityAnalytics
-from app.models.ai_coach import ActivityInsight
 from app.models.training_zone import ZoneType
 from app.analytics import activity_tss, activity_power, activity_report as activity_report_module
 from app.analytics import activity_analyser
 from app.analytics.activity_warmup_finder import detect_warmup
 from app.profile import tools as profile_tools
 from app.profile.training_zones import populate_zones
-from app.ai_coach.routes import _get_lambda_client
+from app.ai_coach.gateway import get_coaching
+from app.ai_coach.service import CoachingError, generate_activity_insight
 from app.strava.service import get_activity_streams
 
 logger = logging.getLogger(__name__)
@@ -496,50 +496,20 @@ def activity_insights(user_id, activity_id, detail_level):
     click.echo(f"ACTIVITY INSIGHTS - User: {user_id}, Activity: {activity_id}, Detail: {detail_level}")
     click.echo("=" * 80)
 
-    # Return cached insight if already generated
-    insight = ActivityInsight.query.filter_by(
-        activity_id=activity_id, user_id=user_id, insight_type='ACTIVITY_INSIGHT',
-    ).first()
-    if insight:
-        click.echo("\n[Cached]\n" + insight.coach_insight)
+    try:
+        result = generate_activity_insight(user_id, activity_id, detail_level, get_coaching)
+    except CoachingError as error:
+        click.echo(f"Error: {error.message}", err=True)
+        return
+
+    if "token_usage" not in result:
+        click.echo("\n[Cached]\n" + result["coaching"])
         click.echo("=" * 80)
         return
 
-    analysis = activity_analyser.analyse_activity(user_id, activity_id, mode='llm')
-    if not analysis['success']:
-        click.echo(f"Error: {analysis['error']}", err=True)
-        return
-
-    llm_payload = analysis.get('llm_payload')
-    if not llm_payload:
-        click.echo("Error: Failed to assemble activity data", err=True)
-        return
-
-    function_name = os.environ.get('COACH_LAMBDA_NAME', 'veloclicks-coach')
-    client = _get_lambda_client()
-    response = client.invoke(
-        FunctionName=function_name,
-        Payload=json.dumps({'llm_payload': llm_payload, 'detail_level': detail_level}),
-    )
-    result = json.loads(response['Payload'].read())
-
-    if not result.get('success'):
-        click.echo(f"Error: {result.get('error')}", err=True)
-        return
-
-    insight = ActivityInsight(
-        activity_id=activity_id,
-        user_id=user_id,
-        insight_type='ACTIVITY_INSIGHT',
-        coach_insight=result['coaching'],
-    )
-    db.session.add(insight)
-    db.session.commit()
-
     click.echo("\n" + result['coaching'])
     click.echo("\n" + "=" * 80)
-    if 'token_usage' in result:
-        usage = result['token_usage']
+    if usage := result.get('token_usage'):
         click.echo(f"Token Usage: {usage['total_tokens']:,} total ({usage['input_tokens']:,} in, {usage['output_tokens']:,} out)")
         cost = (usage['input_tokens'] * 0.003 / 1000) + (usage['output_tokens'] * 0.015 / 1000)
         click.echo(f"Estimated Cost: ${cost:.4f}")

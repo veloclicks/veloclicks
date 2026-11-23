@@ -1,11 +1,12 @@
+"""Build the established activity coaching prompts and call the configured LLM."""
+
 import json
 import logging
 import os
 
-from coaching_prompts import ACTIVITY_COACH_PROMPT
+from .coaching_prompts import ACTIVITY_COACH_PROMPT
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 COACHING_PROMPT = """Analyse this cycling activity and provide coaching feedback.
@@ -31,7 +32,8 @@ _AGENT_PROMPTS = {
 }
 
 
-def generate_coaching(llm_payload, detail_level, agent):
+def generate_coaching(llm_payload: dict, detail_level: str, agent: str) -> tuple[str, dict]:
+    """Generate coaching text and input, output and total token counts."""
     system_prompt = _AGENT_PROMPTS.get(agent, ACTIVITY_COACH_PROMPT)
 
     response_instruction = RESPONSE_INSTRUCTIONS.get(detail_level, RESPONSE_INSTRUCTIONS['simple'])
@@ -43,7 +45,8 @@ def generate_coaching(llm_payload, detail_level, agent):
     return _call_llm(prompt, system_prompt, detail_level)
 
 
-def _call_llm(prompt, system_prompt, detail_level):
+def _call_llm(prompt: str, system_prompt: str, detail_level: str) -> tuple[str, dict]:
+    """Send the prompts to Anthropic and report the provider's token counts."""
     api_key = os.environ.get('ANTHROPIC_API_KEY')
     if not api_key:
         raise ValueError('ANTHROPIC_API_KEY not set')
@@ -75,3 +78,15 @@ def _call_llm(prompt, system_prompt, detail_level):
         'total_tokens':  total,
     }
     return text, token_usage
+
+
+
+def coaching_result(llm_payload: dict, detail_level: str = "simple",
+                    agent: str = "activity") -> dict:
+    """Expose the shared coaching result and the existing provider error format."""
+    try:
+        coaching, token_usage = generate_coaching(llm_payload, detail_level, agent)
+    except Exception as error:
+        logger.error("Coaching generation failed: %s", error)
+        return {"success": False, "error": str(error)}
+    return {"success": True, "coaching": coaching, "token_usage": token_usage}

@@ -2,38 +2,29 @@
 
 ## Local
 
-Three things run locally: Docker Compose (Postgres, Flask, Coach Lambda), SAM (Auth Lambda), and Next (frontend).
+Docker Compose starts PostgreSQL, Flask and Next.js. Flask serves authentication and
+runs coaching in process.
 
-### Start Flask + Postgres + Coach Lambda (Docker Compose)
+### Start the application
 
-```
+Start Docker Desktop and create a root `.env` with `POSTGRES_USER`,
+`POSTGRES_PASSWORD`, `POSTGRES_DB` and a local `SECRET_KEY`. Add
+`ANTHROPIC_API_KEY` for live coaching and the existing Strava settings if you use
+Strava OAuth. Compose connects Flask to its own PostgreSQL service and applies
+the existing migrations during startup.
+
+```bash
 cd ~/dev/veloclicks
-open -a docker                    # starts Docker Desktop if not already running
-
-docker compose up --build         # build + start
-docker compose up                 # start (no rebuild)
-docker compose up -d              # start in background
-docker compose restart flask      # restart one service (db, flask, lambdas)
-docker compose down               # stop everything
+open -a Docker
+docker compose up --build
+docker compose up --build -d    # start in the background
+docker compose restart flask
+docker compose down
 ```
-
-### Start the Auth Lambda (SAM)
-
-Auth is invoked via API Gateway (the browser calls it directly), so it needs real API Gateway event simulation — Docker Compose alone can't provide that faithfully, hence SAM. Requires Docker Compose's `db` service already running (see above), since it connects to Postgres over the `veloclicks_default` Docker network.
-
-```
-cd ~/dev/veloclicks/aws/lambdas
-sam build
-python3 generate_local_env.py       # regenerates env.local.json from .env — rerun if .env changes
-
-sam local start-api --port 3002 --docker-network veloclicks_default --env-vars env.local.json
-```
-
-First request after `sam build` pulls/builds the Lambda runtime image — can take ~30s once, then it's fast.
 
 ### Run Python scripts inside the Flask container
 
-The Flask container is named `vc_flask`. Its working directory is `/app/app`, while the host's `flask/` directory is mounted at `/app`. For scripts stored in `flask/scripts/`, use the absolute path and set `PYTHONPATH=/app` so `from app import ...` works.
+The Flask container is named `vc_flask`. Its working directory is `/app`, while the host's `flask/` directory is mounted at `/app`. For scripts stored in `flask/scripts/`, use the absolute path and set `PYTHONPATH=/app` so `from app import ...` works.
 
 From the repository root on the host:
 
@@ -50,22 +41,14 @@ docker exec -e PYTHONPATH=/app vc_flask python /app/scripts/export_analytics_fix
 
 The output file is written on the **host**. Do not commit it: it contains personal ride data. Python errors appear in the terminal; if the script fails, the redirected JSON may be empty. For local development, prefer this documented `docker exec` pattern over guessing container working directories.
 
-### Start the frontend
-
-The frontend is not in Docker Compose — run it separately.
-
-```
-cd ~/dev/veloclicks/frontend
-npm run dev
-```
-
 ### Local URLs
 
-- Frontend: http://localhost:3000/login
+- Frontend login: http://localhost:3000/login
 - Flask health: http://localhost:5002/health
-- Flask user list: http://localhost:5002/listusers
-- Coach Lambda (RIE): http://localhost:3001/2015-03-31/functions/function/invocations
-- Auth Lambda (SAM): http://localhost:3002/api/login
+- Frontend auth API: `POST http://localhost:5002/auth/api/login`, `/auth/api/register` and `/auth/api/refresh`
+- Profile: `GET http://localhost:5002/api/profile` with an access token
+- Coaching: `GET http://localhost:5002/ai-coach/activity/<id>` with a premium account and an owned activity
+- PostgreSQL from the host: `localhost:5432`
 
 ### VS Code
 
@@ -111,7 +94,7 @@ Health check: https://ztbap26rs2.execute-api.eu-west-2.amazonaws.com/dev/health
 
 ### Deploy the Auth + Coach Lambdas (SAM)
 
-Use this for changes to either standalone Lambda or their SAM configuration. Local `sam local start-api` only runs the Auth Lambda locally; it does **not** deploy anything to AWS.
+Use this for changes to either standalone Lambda or their SAM configuration.
 
 Both are deployed together under one CloudFormation stack (`veloclicks-lambdas`) from `aws/lambdas/template.yaml`. Their secrets (`DATABASE_URL`, `SECRET_KEY`, `ANTHROPIC_API_KEY`) are pulled fresh from SSM at deploy time and passed in as parameters — CloudFormation doesn't support secure SSM references directly on Lambda environment variables.
 
@@ -147,7 +130,7 @@ No manual Vercel deployment command is needed for the normal Git-based workflow.
 1. Push to git — Vercel deploys on push automatically
 2. Check deployment status: https://vercel.com/veloclicks/~/deployments
 3. Login from the frontend uses the Auth Lambda endpoint, so Vercel needs `NEXT_PUBLIC_AUTH_URL` set to the Auth API URL above. In the AWS Console, find it under **API Gateway → Stages → Prod** (or use the CloudFormation output command above). If the Lambda stack is recreated rather than updated, check whether this URL has changed and update Vercel's project settings if necessary.
-4. The authentication migration is not fully complete: Flask still contains its own login and registration routes. See `claude.md` before removing them.
+4. The legacy Flask login and registration URLs remain available. Both deployments use the shared auth service with their existing response and access-token formats.
 
 ---
 

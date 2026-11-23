@@ -1,98 +1,61 @@
+"""API Gateway adapter for standalone authentication."""
+
 import json
 import os
+
+from shared_auth import http_contract
 
 _auth_service = None
 
 
 def get_auth_service():
-    # Lazy import keeps cold start fast — dependencies only loaded on first request
+    """Reuse the service across invocations and defer loading the database driver."""
     global _auth_service
     if _auth_service is None:
-        from auth_service import AuthService
         from db import get_connection
-        _auth_service = AuthService(get_connection)
+        from repository import PostgresUserRepository
+        from shared_auth.service import AuthService
+
+        _auth_service = AuthService(
+            PostgresUserRepository(get_connection),
+            os.environ["SECRET_KEY"],
+            access_minutes=int(os.getenv("ACCESS_TOKEN_EXPIRY_MINUTES", "30")),
+            refresh_days=int(os.getenv("REFRESH_TOKEN_EXPIRY_DAYS", "30")),
+        )
     return _auth_service
 
 
 def lambda_handler(event, context):
-    # Support both API Gateway v1 (httpMethod/path) and v2 (requestContext.http)
-    path = event.get("path", "") or event.get("rawPath", "")
-    method = event.get("httpMethod", "") or event.get("requestContext", {}).get("http", {}).get("method", "")
-
+    """Map API Gateway v1 or v2 requests to the standalone auth API contract."""
+    path = event.get("path") or event.get("rawPath", "")
+    method = event.get("httpMethod") or event.get("requestContext", {}).get("http", {}).get("method")
     if method == "OPTIONS":
         return _response(200, {})
-
     if method != "POST":
         return _response(405, {"message": "Method not allowed"})
 
     try:
-        body = json.loads(event.get("body", "{}") or "{}")
+        body = json.loads(event.get("body") or "{}")
     except (json.JSONDecodeError, TypeError):
+        return _response(400, {"message": "Invalid JSON"})
+    if not isinstance(body, dict):
         return _response(400, {"message": "Invalid JSON"})
 
     if path.endswith("/login"):
-        return _login(body)
+        result, status = http_contract.login(get_auth_service(), body)
     elif path.endswith("/register"):
-        return _register(body)
+        result, status = http_contract.register(get_auth_service(), body)
     elif path.endswith("/refresh"):
-        return _refresh(body, event.get("headers", {}))
+        headers = event.get("headers") or {}
+        authorization = headers.get("Authorization") or headers.get("authorization", "")
+        result, status = http_contract.refresh(get_auth_service(), body, authorization)
     else:
         return _response(404, {"message": "Not found"})
-
-
-def _login(body):
-    username = body.get("username")
-    password = body.get("password")
-    if not username or not password:
-        return _response(400, {"message": "Username and password required"})
-
-    result = get_auth_service().login(username, password)
-    if result is None:
-        return _response(401, {"message": "Invalid credentials"})
-
-    # Frontend reads data.token — not data.access_token
-    return _response(200, {"token": result["access_token"]})
-
-
-def _register(body):
-    username = body.get("username")
-    email = body.get("email")
-    password = body.get("password")
-    firstname = body.get("firstname")
-    lastname = body.get("lastname")
-
-    if not email or not password:
-        return _response(400, {"message": "Email and password required"})
-
-    result = get_auth_service().register(
-        username=username or email,
-        email=email,
-        password=password,
-        firstname=firstname,
-        lastname=lastname,
-    )
-    if result is None:
-        return _response(409, {"message": "User already exists"})
-
-    # Frontend only checks response.ok on register — does not consume body
-    return _response(201, {"message": "Registration successful"})
-
-
-def _refresh(body, headers):
-    # Accept token from Authorization header or request body
-    auth_header = headers.get("Authorization", "") or headers.get("authorization", "")
-    token = auth_header.replace("Bearer ", "") if auth_header else body.get("refresh_token")
-    if not token:
-        return _response(400, {"message": "Refresh token required"})
-
-    result = get_auth_service().refresh(token)
-    if result is None:
-        return _response(401, {"message": "Invalid or expired token"})
-
-    return _response(200, {"token": result["access_token"]})
+    return _response(status, result)
 
 
 def _response(status_code: int, body: dict) -> dict:
+    """Encode the response and preserve the existing API Gateway CORS headers."""
     return {
         "statusCode": status_code,
         "headers": {

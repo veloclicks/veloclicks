@@ -3,6 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_cors import CORS
 import logging
+import os
 import sys
 
 
@@ -65,6 +66,9 @@ def create_app(*args, **kwargs) -> Flask:
 
     from app.auth import auth_bp
     app.register_blueprint(auth_bp)
+    if os.getenv("LOCAL_DOMAIN_SERVICES") == "1":
+        from app.auth.routes import local_auth_bp
+        app.register_blueprint(local_auth_bp)
 
     from app.profile import profile_bp
     app.register_blueprint(profile_bp)

@@ -10,6 +10,7 @@ Environment Resolution:
 
 import os
 from dotenv import load_dotenv
+from sqlalchemy import URL
 load_dotenv()
 
 # Configuration variables (resolved at module load time)
@@ -109,7 +110,14 @@ if os.getenv('LOG_LEVEL', 'INFO').upper() == 'DEBUG':
 #
 class Config:
 
-    SQLALCHEMY_DATABASE_URI = DATABASE_URL or f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+    SQLALCHEMY_DATABASE_URI = DATABASE_URL or URL.create(
+        "postgresql+psycopg2",
+        username=POSTGRES_USER,
+        password=POSTGRES_PASSWORD,
+        host=POSTGRES_HOST,
+        port=int(POSTGRES_PORT) if POSTGRES_PORT else None,
+        database=POSTGRES_DB,
+    )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     SECRET_KEY = SECRET_KEY

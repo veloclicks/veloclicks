@@ -25,13 +25,13 @@
 
 ### Platform
 #### Local Env
-- Docker Compose (Postgres, Flask, Coach Lambda) + `sam local start-api` (Auth Lambda) + `npm run dev` (frontend) — see [docs/cheat_sheet.md](docs/cheat_sheet.md)
+- Docker Compose (PostgreSQL, Flask with auth and coaching, and Next.js) — see [docs/cheat_sheet.md](docs/cheat_sheet.md)
 
 ### Production Environment
 - Front End deployed to Vercel — `https://veloclicks-prod.vercel.app`
 - Zappa wrapper in production deployed to AWS lambda (covers the core Flask app only)
 - AI coach is a separate AWS Lambda (`veloclicks-coach`), deployed independently via AWS SAM (`aws/lambdas/template.yaml`) and invoked from Flask over boto3 — not part of the Zappa deployment
-- Auth is mid-migration from Flask routes to a dedicated `veloclicks-auth` Lambda (`aws/lambdas/auth/`, also SAM-deployed). Flask still serves `/register` and `/login` directly for now — not yet cut over
+- Auth is served by the standalone `veloclicks-auth` Lambda (`aws/lambdas/auth/`, also SAM-deployed). Flask retains its legacy `/api/register` and `/api/login` routes and shares the same authentication service.
 
 ## Key Folders
 - flask <-- has all python code organised into modules

@@ -40,7 +40,7 @@
 - **Auth:** Standalone Lambda deployed using SAM; frontend login calls its API Gateway endpoint.
 - **Coach:** Standalone Lambda deployed using SAM; invoked by the Flask API.
 - **Data:** PostgreSQL via SQLAlchemy.
-- **Local:** Docker Compose runs PostgreSQL, Flask and the Coach Lambda runtime; SAM local runs the Auth API; Next.js runs separately.
+- **Local:** Docker Compose runs PostgreSQL, Flask and Next.js. Flask runs auth and coaching in process.
 
 See `docs/cheat_sheet.md` for the actual commands and current endpoints.
 

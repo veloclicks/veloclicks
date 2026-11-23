@@ -4,7 +4,7 @@ FROM python:3.11-slim
 # The files copied in here come from the build context specificed in docker-compose
 # This sets the working directory for all subsequent commands in Dockerfile
 # It also becomes the default working directory when the container starts
-WORKDIR /app/app
+WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && \

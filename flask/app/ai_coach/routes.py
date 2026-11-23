@@ -1,121 +1,30 @@
-"""
-AI coaching API endpoints.
-"""
+"""HTTP endpoints for activity coaching and its analytics summary."""
 
-import logging
-import boto3
-import json
-import os
-from flask import jsonify, request, g
-from app.ai_coach import ai_coach_bp
-from app.models.user import User, MembershipType
-from app.models.strava import Activity
-from app.models.ai_coach import ActivityInsight
-from app.models.db import db
-from app.analytics import activity_analyser
+from flask import g, jsonify, request
+
+from app.ai_coach import ai_coach_bp, service
+from app.ai_coach.gateway import get_coaching
 from app.common.auth import require_auth
 
-logger = logging.getLogger(__name__)
 
-
-def _get_lambda_client():
-    """Return a boto3 Lambda client — local endpoint if configured, otherwise real AWS."""
-    endpoint_url = os.environ.get('COACH_LAMBDA_ENDPOINT')
-    kwargs = dict(region_name='eu-west-2')
-    if endpoint_url:
-        kwargs['endpoint_url'] = endpoint_url
-        kwargs['aws_access_key_id'] = 'local'
-        kwargs['aws_secret_access_key'] = 'local'
-    return boto3.client('lambda', **kwargs)
+@ai_coach_bp.errorhandler(service.CoachingError)
+def _coaching_error(error: service.CoachingError):
+    """Preserve the public error response for coaching and summary requests."""
+    return jsonify(error=error.message), error.status
 
 
 @ai_coach_bp.route("/activity/<int:id>", methods=["GET"])
 @require_auth
 def activity_coaching(id):
-    """Return persisted AI coaching insight, or generate and persist one via the coach Lambda."""
-    detail_level = request.args.get('detail_level', 'simple')
-    if detail_level not in ('simple', 'detailed'):
-        return jsonify({"error": "detail_level must be 'simple' or 'detailed'"}), 400
-
-    user_id = g.user_id
-    user = User.query.get(user_id)
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-
-    if user.membership_type != MembershipType.PREMIUM_TIER:
-        return jsonify({"error": "Premium membership required"}), 403
-
-    activity = Activity.query.filter_by(id=id, user_id=user_id).first()
-    if not activity:
-        return jsonify({"error": "Activity not found"}), 404
-
-    # Return cached insight if already generated
-    insight = ActivityInsight.query.filter_by(
-        activity_id=id, user_id=user_id, insight_type='ACTIVITY_INSIGHT',
-    ).first()
-    if insight:
-        return jsonify({'coaching': insight.coach_insight}), 200
-
-    # Get data about the activity to send to LLM
-    result = activity_analyser.analyse_activity(user_id, id, mode='llm')
-    if not result['success']:
-        return jsonify({'error': result['error']}), 500
-
-    llm_payload = result.get('llm_payload')
-    if not llm_payload:
-        return jsonify({'error': 'Failed to assemble activity data'}), 500
-
-    # invoke the lambda - ie the coach
-    function_name = os.environ.get('COACH_LAMBDA_NAME', 'veloclicks-coach')
-    client = _get_lambda_client()
-    response = client.invoke(
-        FunctionName=function_name,
-        Payload=json.dumps({'llm_payload': llm_payload, 'detail_level': detail_level}),
-    )
-    coaching_result = json.loads(response['Payload'].read())
-
-    if not coaching_result.get('success'):
-        return jsonify({'error': coaching_result.get('error')}), 500
-
-    
-    # add coaching insight to database
-    insight = ActivityInsight(
-        activity_id=id,
-        user_id=user_id,
-        insight_type='ACTIVITY_INSIGHT',
-        coach_insight=coaching_result['coaching'],
-    )
-    db.session.add(insight)
-    db.session.commit()
-
-    return jsonify({
-        'coaching':    coaching_result['coaching'],
-        'token_usage': coaching_result.get('token_usage'),
-    }), 200
+    """Return an existing insight or generate one at the requested detail level."""
+    detail_level = request.args.get("detail_level", "simple")
+    if detail_level not in ("simple", "detailed"):
+        return jsonify(error="detail_level must be 'simple' or 'detailed'"), 400
+    return jsonify(service.activity_coaching(g.user_id, id, detail_level, get_coaching))
 
 
 @ai_coach_bp.route("/activity/<int:id>/summary", methods=["GET"])
 @require_auth
 def activity_summary(id):
-    """Return the JSON activity summary (llm_payload) that would be sent to the coach."""
-    user_id = g.user_id
-    user = User.query.get(user_id)
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-
-    if user.membership_type != MembershipType.PREMIUM_TIER:
-        return jsonify({"error": "Premium membership required"}), 403
-
-    activity = Activity.query.filter_by(id=id, user_id=user_id).first()
-    if not activity:
-        return jsonify({"error": "Activity not found"}), 404
-
-    result = activity_analyser.analyse_activity(user_id, id, mode='llm')
-    if not result['success']:
-        return jsonify({'error': result['error']}), 500
-
-    llm_payload = result.get('llm_payload')
-    if not llm_payload:
-        return jsonify({'error': 'Failed to assemble activity data'}), 500
-
-    return jsonify({'summary': llm_payload}), 200
+    """Return the activity analytics payload used for coaching."""
+    return jsonify(summary=service.activity_summary(g.user_id, id))

@@ -1,19 +1,22 @@
+"""Flask authorization decorator for both deployed access token contracts."""
+
 from functools import wraps
-from flask import request, g, jsonify, current_app
+
 import jwt
+from flask import current_app, g, jsonify, request
+
+from app.shared_auth.service import access_token_user_id
 
 
-def require_auth(f):
-    @wraps(f)
+def require_auth(view):
+    """Run the view with the authenticated user ID, or return the existing 401."""
+    @wraps(view)
     def decorated(*args, **kwargs):
-        auth_header = request.headers.get('Authorization')
-        if not auth_header:
-            return jsonify({"error": "Authentication required"}), 401
+        authorization = request.headers.get("Authorization", "")
         try:
-            token = auth_header.split(' ')[1]
-            payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
-            g.user_id = payload['user_id']
-        except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, IndexError):
-            return jsonify({"error": "Authentication required"}), 401
-        return f(*args, **kwargs)
+            token = authorization.split(" ")[1]
+            g.user_id = access_token_user_id(token, current_app.config["SECRET_KEY"])
+        except (jwt.InvalidTokenError, IndexError):
+            return jsonify(error="Authentication required"), 401
+        return view(*args, **kwargs)
     return decorated
