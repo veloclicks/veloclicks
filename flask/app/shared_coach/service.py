@@ -37,8 +37,6 @@ def generate_coaching(llm_payload: dict) -> tuple[dict, dict]:
         messages=[{"role": "user", "content": json.dumps(llm_payload)}],
     )
     text = "".join(block.text for block in response.content if block.type == "text")
-    logger.warning("Raw coaching response: %r", text)
-    logger.warning("Stop reason: %s", response.stop_reason)
     feedback = _parse_feedback(text)
     usage = {
         "input_tokens": response.usage.input_tokens,
