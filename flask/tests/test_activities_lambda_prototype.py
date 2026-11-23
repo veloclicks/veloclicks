@@ -155,3 +155,16 @@ def test_rolling_window_cursor_parity(adapters, monkeypatch):
     later_flask, later_prototype = call(1, params={"limit": "1", "cursor": cursor})
     assert later_flask == later_prototype
     assert [row["id"] for row in later_prototype[1]["activities"]] == [499]
+
+
+def test_cors_allows_both_production_hosts(adapters, monkeypatch):
+    """Scope CORS to the configured production origins, including www."""
+    _, prototype = adapters
+    origins = ("https://www.veloclicks.com", "https://veloclicks-prod.vercel.app")
+    monkeypatch.setenv("CORS_ORIGIN", ",".join(origins))
+    for origin in (*origins, "https://unrelated.example"):
+        for method in ("OPTIONS", "GET"):
+            result = prototype.handler({"httpMethod": method, "headers": {"Origin": origin}}, None)
+            assert result["headers"]["Vary"] == "Origin"
+            expected = origin if origin in origins else None
+            assert result["headers"].get("Access-Control-Allow-Origin") == expected

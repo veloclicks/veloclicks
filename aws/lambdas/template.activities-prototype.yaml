@@ -10,6 +10,7 @@ Parameters:
     Type: String
     NoEcho: true
   CorsOrigin:
+    Description: Comma-separated frontend origins allowed by the Activities API
     Type: String
     Default: 'http://localhost:3000'
 

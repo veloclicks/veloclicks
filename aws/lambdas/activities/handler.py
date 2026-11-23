@@ -13,20 +13,26 @@ logger = logging.getLogger(__name__)
 
 def handler(event, context):
     """Authenticate and serve a paginated GET, with an unauthenticated CORS preflight."""
+    headers = {name.lower(): value for name, value in (event.get("headers") or {}).items()}
+    status, body = _handle_request(event, headers)
+    return _response(status, body, headers.get("origin"))
+
+
+def _handle_request(event: dict, headers: dict) -> tuple[int, dict]:
+    """Select the HTTP result before applying the shared headers."""
     method = event.get("httpMethod") or event.get("requestContext", {}).get("http", {}).get("method")
     if method == "OPTIONS":
-        return _response(200, {})
+        return 200, {}
     if method != "GET":
-        return _response(405, {"error": "Method not allowed"})
+        return 405, {"error": "Method not allowed"}
 
     secret = os.environ["SECRET_KEY"]
-    headers = {name.lower(): value for name, value in (event.get("headers") or {}).items()}
     try:
         # Match the deployed Flask header parsing and reuse its token verifier.
         token = headers.get("authorization", "").split(" ")[1]
         user_id = access_token_user_id(token, secret)
     except (jwt.InvalidTokenError, IndexError):
-        return _response(401, {"error": "Authentication required"})
+        return 401, {"error": "Authentication required"}
 
     query = event.get("queryStringParameters") or {}
     raw_query = event.get("rawQueryString")
@@ -41,23 +47,29 @@ def handler(event, context):
 
     try:
         engine = database_engine(os.environ["DATABASE_URL"])
-        return _response(200, activity_page(engine, user_id, query, secret))
+        return 200, activity_page(engine, user_id, query, secret)
     except InvalidPage as error:
-        return _response(400, {"error": str(error)})
+        return 400, {"error": str(error)}
     except SQLAlchemyError as error:
         logger.error("Activities database query failed (%s)", type(error).__name__)
-        return _response(500, {"error": "Could not load activities"})
+        return 500, {"error": "Could not load activities"}
 
 
-def _response(status: int, body: dict) -> dict:
-    """Encode proxy JSON and preserve cross-origin bearer requests."""
+def _response(status: int, body: dict, origin: str | None) -> dict:
+    """Allow cross-origin bearer requests only from configured frontend origins."""
+    allowed_origins = {value.strip() for value in os.getenv("CORS_ORIGIN", "*").split(",")}
+    headers = {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Headers": "Authorization,Content-Type",
+        "Access-Control-Allow-Methods": "GET,OPTIONS",
+        "Vary": "Origin",
+    }
+    if "*" in allowed_origins:
+        headers["Access-Control-Allow-Origin"] = "*"
+    elif origin in allowed_origins:
+        headers["Access-Control-Allow-Origin"] = origin
     return {
         "statusCode": status,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": os.getenv("CORS_ORIGIN", "*"),
-            "Access-Control-Allow-Headers": "Authorization,Content-Type",
-            "Access-Control-Allow-Methods": "GET,OPTIONS",
-        },
+        "headers": headers,
         "body": json.dumps(body, separators=(",", ":")),
     }

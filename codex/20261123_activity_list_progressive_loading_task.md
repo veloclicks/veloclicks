@@ -99,3 +99,7 @@ Patrick authorised moving production activity-list traffic to the standalone Lam
 Before switching the frontend, an authenticated production comparison matched the first page and signed cursor against Flask and verified continuation in both directions, CORS, and unauthorized rejection. One first-request comparison measured 7.0 seconds on the new endpoint and 17.3 seconds on Zappa. A warm standalone first page took 0.22 seconds. These are individual samples.
 
 The canonical production frontend uses the standalone endpoint for paginated activities. Local and demo use the existing Flask API. The optional `NEXT_PUBLIC_ACTIVITIES_API_URL` setting can override the list URL. To roll back traffic if Patrick decides, restore the previous Vercel production deployment or point that variable at the Flask base URL and redeploy the frontend. Leave the Flask endpoint available and keep the new stack intact during a traffic rollback.
+
+### Production custom domain
+
+The initial frontend switch covered `veloclicks-prod.vercel.app`. A subsequent production test from `www.veloclicks.com` still used Flask. The routing and Activities API CORS configuration now account for both production hosts. Verify the browser cutover from the custom domain as well as the Vercel alias. This routing gap does not account for the timing of every slow request.
