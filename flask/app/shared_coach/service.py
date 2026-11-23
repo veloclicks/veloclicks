@@ -1,4 +1,4 @@
-"""Build the established activity coaching prompts and call the configured LLM."""
+"""Generate structured, evidence-based cycling feedback using the configured LLM."""
 
 import json
 import logging
@@ -9,84 +9,52 @@ from .coaching_prompts import ACTIVITY_COACH_PROMPT
 logger = logging.getLogger(__name__)
 
 
-COACHING_PROMPT = """Analyse this cycling activity and provide coaching feedback.
-
-{payload}
-
-{response_instruction}"""
-
-RESPONSE_INSTRUCTIONS = {
-    'simple': (
-        "Provide a concise 2-3 paragraph coaching summary covering workout quality, "
-        "execution vs target, and one key takeaway."
-    ),
-    'detailed': (
-        "Provide comprehensive coaching feedback covering: workout quality and execution, "
-        "pacing and power fade with reference to the time series, terrain correlation, "
-        "any technique flags, and 2-3 specific actionable recommendations."
-    ),
-}
-
-_AGENT_PROMPTS = {
-    'activity': ACTIVITY_COACH_PROMPT,
-}
+def _parse_feedback(text: str) -> dict:
+    """Validate the provider's structured response before it reaches the UI."""
+    feedback = json.loads(text)
+    fields = ("headline", "analysis", "takeaway")
+    if not isinstance(feedback, dict) or any(
+        not isinstance(feedback.get(field), str) or not feedback[field].strip()
+        for field in fields
+    ):
+        raise ValueError("Coaching response did not contain the required fields")
+    return {field: feedback[field].strip() for field in fields}
 
 
-def generate_coaching(llm_payload: dict, detail_level: str, agent: str) -> tuple[str, dict]:
-    """Generate coaching text and input, output and total token counts."""
-    system_prompt = _AGENT_PROMPTS.get(agent, ACTIVITY_COACH_PROMPT)
-
-    response_instruction = RESPONSE_INSTRUCTIONS.get(detail_level, RESPONSE_INSTRUCTIONS['simple'])
-    prompt = COACHING_PROMPT.format(
-        payload              = json.dumps(llm_payload, indent=2),
-        response_instruction = response_instruction,
-    )
-
-    return _call_llm(prompt, system_prompt, detail_level)
-
-
-def _call_llm(prompt: str, system_prompt: str, detail_level: str) -> tuple[str, dict]:
-    """Send the prompts to Anthropic and report the provider's token counts."""
-    api_key = os.environ.get('ANTHROPIC_API_KEY')
+def generate_coaching(llm_payload: dict) -> tuple[dict, dict]:
+    """Generate one coaching report and return its token usage."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
-        raise ValueError('ANTHROPIC_API_KEY not set')
-
-    model      = os.environ.get('LLM_MODEL', 'claude-sonnet-5')
-    max_tokens = 3000 if detail_level == 'simple' else 5000
+        raise ValueError("ANTHROPIC_API_KEY not set")
 
     from anthropic import Anthropic
-    client   = Anthropic(api_key=api_key)
+
+    client = Anthropic(api_key=api_key)
     response = client.messages.create(
-        model      = model,
-        max_tokens = max_tokens,
-        system     = system_prompt,
-        messages   = [{'role': 'user', 'content': prompt}],
+        model=os.environ.get("LLM_MODEL", "claude-sonnet-5"),
+        max_tokens=1200,
+        system=ACTIVITY_COACH_PROMPT,
+        messages=[{"role": "user", "content": json.dumps(llm_payload)}],
     )
-
-    total = response.usage.input_tokens + response.usage.output_tokens
-    cost  = (response.usage.input_tokens * 0.003 / 1000) + (response.usage.output_tokens * 0.015 / 1000)
-    logger.info(
-        f"tokens: {response.usage.input_tokens} in "
-        f"+ {response.usage.output_tokens} out "
-        f"= {total} total | est. cost ${cost:.4f}"
-    )
-
-    text = ''.join(block.text for block in response.content if block.type == 'text')
-    token_usage = {
-        'input_tokens':  response.usage.input_tokens,
-        'output_tokens': response.usage.output_tokens,
-        'total_tokens':  total,
+    text = "".join(block.text for block in response.content if block.type == "text")
+    feedback = _parse_feedback(text)
+    usage = {
+        "input_tokens": response.usage.input_tokens,
+        "output_tokens": response.usage.output_tokens,
+        "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
     }
-    return text, token_usage
-
+    return feedback, usage
 
 
 def coaching_result(llm_payload: dict, detail_level: str = "simple",
                     agent: str = "activity") -> dict:
-    """Expose the shared coaching result and the existing provider error format."""
+    """Return the shared coaching contract; ignore legacy selection parameters."""
     try:
-        coaching, token_usage = generate_coaching(llm_payload, detail_level, agent)
-    except Exception as error:
-        logger.error("Coaching generation failed: %s", error)
-        return {"success": False, "error": str(error)}
-    return {"success": True, "coaching": coaching, "token_usage": token_usage}
+        feedback, usage = generate_coaching(llm_payload)
+    except (ValueError, json.JSONDecodeError) as error:
+        logger.warning("Coaching response invalid: %s", error)
+        return {"success": False, "error": "Unable to generate coaching feedback"}
+    except Exception:
+        logger.exception("Coaching generation failed")
+        return {"success": False, "error": "Unable to generate coaching feedback"}
+    return {"success": True, "coaching": feedback, "token_usage": usage}
