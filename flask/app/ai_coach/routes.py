@@ -17,10 +17,7 @@ def _coaching_error(error: service.CoachingError):
 @require_auth
 def activity_coaching(id):
     """Return an existing insight or generate one at the requested detail level."""
-    detail_level = request.args.get("detail_level", "simple")
-    if detail_level not in ("simple", "detailed"):
-        return jsonify(error="detail_level must be 'simple' or 'detailed'"), 400
-    return jsonify(service.activity_coaching(g.user_id, id, detail_level, get_coaching))
+    return jsonify(service.activity_coaching(g.user_id, id, get_coaching))
 
 
 @ai_coach_bp.route("/activity/<int:id>/summary", methods=["GET"])
