@@ -1,6 +1,7 @@
 """Authorize activity coaching and coordinate analytics, generation and persistence."""
 
 from collections.abc import Callable
+import json
 
 from app.analytics import activity_analyser
 from app.models.ai_coach import ActivityInsight
@@ -63,7 +64,7 @@ def generate_activity_insight(user_id: int, activity_id: int,
     ).first()
     if insight:
         try:
-            cached = __import__("json").loads(insight.coach_insight)
+            cached = json.loads(insight.coach_insight)
         except (ValueError, TypeError):
             cached = insight.coach_insight
         return {"coaching": cached}
@@ -74,7 +75,7 @@ def generate_activity_insight(user_id: int, activity_id: int,
 
     db.session.add(ActivityInsight(
         activity_id=activity_id, user_id=user_id,
-        insight_type=insight_type, coach_insight=__import__("json").dumps(result["coaching"]),
+        insight_type=insight_type, coach_insight=json.dumps(result["coaching"]),
     ))
     db.session.commit()
     return {"coaching": result["coaching"], "token_usage": result.get("token_usage")}
