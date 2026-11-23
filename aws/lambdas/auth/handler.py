@@ -25,7 +25,7 @@ def get_auth_service():
     return _auth_service
 
 
-def lambda_handler(event, context):
+def handler(event, context):
     """Map API Gateway v1 or v2 requests to the standalone auth API contract."""
     path = event.get("path") or event.get("rawPath", "")
     method = event.get("httpMethod") or event.get("requestContext", {}).get("http", {}).get("method")
