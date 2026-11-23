@@ -62,6 +62,13 @@ code ~/dev/veloclicks
 2. Also add it to `flask/requirements.txt` (this is what the Docker build and Zappa both install from)
 3. If it's a large/native dependency, it may need to go into a Lambda Layer instead (`aws/lambda_layers/`) rather than being bundled directly — Zappa's deploy package has a size limit
 
+
+### Resetting coaching insights locally
+docker compose exec -T db sh -c \
+  'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+DELETE FROM vc_activity_insight
+WHERE insight_type = 'ACTIVITY_INSIGHT';
+SQL
 ---
 
 ## Production (Remote)
