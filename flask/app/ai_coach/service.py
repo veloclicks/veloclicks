@@ -48,21 +48,21 @@ def activity_summary(user_id: int, activity_id: int) -> dict:
 
 
 def activity_coaching(user_id: int, activity_id: int,
-                      generate: Callable[[dict], dict]) -> dict:
-    """Read the stored insight or generate and persist feedback for this activity."""
+                      generate: Callable[[dict], dict], regenerate: bool = False) -> dict:
+    """Read or regenerate the authorized activity coaching report."""
     _authorize_activity(user_id, activity_id)
-    return generate_activity_insight(user_id, activity_id, generate)
+    return generate_activity_insight(user_id, activity_id, generate, regenerate=regenerate)
 
 
 def generate_activity_insight(user_id: int, activity_id: int,
-                              generate: Callable[[dict], dict]) -> dict:
+                              generate: Callable[[dict], dict], regenerate: bool = False) -> dict:
     """Read or generate an insight for an authorized API request or an admin command."""
     insight_type = "ACTIVITY_INSIGHT"
     # Preserve one cached report per activity, including legacy plain-text reports.
     insight = ActivityInsight.query.filter_by(
         activity_id=activity_id, user_id=user_id, insight_type=insight_type,
     ).first()
-    if insight:
+    if insight and not regenerate:
         try:
             cached = json.loads(insight.coach_insight)
         except (ValueError, TypeError):
@@ -73,9 +73,12 @@ def generate_activity_insight(user_id: int, activity_id: int,
     if not result.get("success"):
         raise CoachingError(result.get("error"), 500)
 
-    db.session.add(ActivityInsight(
-        activity_id=activity_id, user_id=user_id,
-        insight_type=insight_type, coach_insight=json.dumps(result["coaching"]),
-    ))
+    if insight:
+        insight.coach_insight = json.dumps(result["coaching"])
+    else:
+        db.session.add(ActivityInsight(
+            activity_id=activity_id, user_id=user_id,
+            insight_type=insight_type, coach_insight=json.dumps(result["coaching"]),
+        ))
     db.session.commit()
     return {"coaching": result["coaching"], "token_usage": result.get("token_usage")}
