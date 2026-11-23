@@ -14,7 +14,9 @@ Application logic, across all domains, shall be independent of the infrastructur
 
 In particular, logic deployed to AWS Lambda shall not be embedded within Lambda-specific handlers or depend on Lambda-specific event or runtime interfaces. Moving to another serverless platform or conventional hosting environment should require replacing adapters or configuration, not rewriting application logic.
 
-**Rationale:** Preserves portability, simplifies local execution and testing, and limits platform lock-in.
+Business capabilities shall be runnable together in the local Docker environment without requiring AWS Lambda or SAM emulation. In production, the same capabilities may be packaged as individual Lambda functions or hosted together in the Zappa/Flask deployment, according to deployment decisions. Only entry-point adapters, wiring, and deployment configuration should vary; domain logic must not be duplicated or rewritten for each hosting arrangement.
+
+**Rationale:** Preserves portability, enables one-command local execution, supports flexible deployment granularity, and limits platform lock-in.
 
 ## AP-03 — Reusable Domain Services
 
