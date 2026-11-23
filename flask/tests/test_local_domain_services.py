@@ -125,11 +125,13 @@ class LocalDomainServicesTest(unittest.TestCase):
         })
         request = create.call_args.kwargs
         self.assertEqual(request["max_tokens"], 1200)
-        self.assertIn("ACTIVITY_COACH_PROMPT", "ACTIVITY_COACH_PROMPT")
+        self.assertIn("Return ONLY a valid JSON object", request["system"])
         self.assertIn('"distance": 50000', request["messages"][0]["content"])
         self.assertEqual(self.client.get(url, headers=headers).json, {"coaching": {"headline": "Steady ride", "analysis": "HR stayed consistent.", "takeaway": "No change needed"}})
         create.assert_called_once()
         self.assertEqual(analyse.call_count, 2)
+        self.assertEqual(self.client.get(url + "?regenerate=1", headers=headers).status_code, 200)
+        self.assertEqual(create.call_count, 2)
 
     @patch("anthropic.Anthropic")
     @patch("app.ai_coach.service.activity_analyser.analyse_activity")
@@ -144,7 +146,6 @@ class LocalDomainServicesTest(unittest.TestCase):
             User.query.one().membership_type = MembershipType.PREMIUM_TIER
             db.session.commit()
         self.assertEqual(self.client.get("/ai-coach/activity/43", headers=headers).status_code, 404)
-        self.assertEqual(self.client.get(url + "?detail_level=bad", headers=headers).status_code, 200) if False else None
         analyse.return_value = {"success": False, "error": "Analysis failed"}
         self.assertEqual(self.client.get(url, headers=headers).json, {"error": "Analysis failed"})
         analyse.return_value = {"success": True, "llm_payload": {"distance": 50000}}
