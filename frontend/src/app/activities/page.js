@@ -7,12 +7,17 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { useAuth } from '../../contexts/AuthContext';
 import { demoActivitiesData } from '../../data/demoActivities';
 
+const PAGE_SIZE = 50;
+
 const ActivitiesContent = () => {
   const searchParams = useSearchParams();
-  const { user, isDemoMode } = useAuth();
+  const { user, isAuthenticated, isDemoMode } = useAuth();
+  const userEmail = user?.email;
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [page, setPage] = useState(1);
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [selectedYears, setSelectedYears] = useState(['2025', '2026']); // Default to recent years
   const [minElapsedTime, setMinElapsedTime] = useState(0);
@@ -21,14 +26,6 @@ const ActivitiesContent = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
-
-  // Initialize with demo data if in demo mode to prevent API calls during SSG
-  useEffect(() => {
-    if (isDemoMode || localStorage.getItem('demoMode') === 'true') {
-      setActivities(demoActivitiesData);
-      setLoading(false);
-    }
-  }, [isDemoMode]);
 
   // Check for Strava connection success
   useEffect(() => {
@@ -53,81 +50,84 @@ const ActivitiesContent = () => {
     }
   }, [searchParams]);
 
-  // Fetch activities from Flask API or use demo data
-  const fetchActivities = async (years = null) => {
-    try {
-      setLoading(true);
-
-      // Check if demo mode - if so, use demo data
-      if (isDemoMode || user?.email === process.env.NEXT_PUBLIC_DEMO_EMAIL || localStorage.getItem('demoMode') === 'true') {
-        // Filter demo data by selected years if provided
-        let filteredData = demoActivitiesData;
-        if (years && years.length > 0) {
-          filteredData = demoActivitiesData.filter(activity => {
-            const activityYear = new Date(activity.dateTime).getFullYear();
-            return years.includes(activityYear.toString());
-          });
-        }
-
-        setActivities(filteredData);
-        setLoading(false);
-        return;
-      }
-
-      // For real users, fetch from API
-      let url = `${process.env.NEXT_PUBLIC_API_URL}/strava/activities/`;
-      if (years && years.length > 0) {
-        url += `?years=${years.join(',')}`;
-      }
-
-      const token = localStorage.getItem('authToken');
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      if (!response.ok) {
-        throw new Error('Failed to fetch activities');
-      }
-      const data = await response.json();
-
-      // Transform backend data to frontend format
-      const transformedActivities = data.map(activity => ({
-        id: activity.id,
-        name: activity.name,
-        dateTime: activity.start_date_local || activity.start_date,
-        elapsedTime: Math.round((activity.elapsed_time || 0) / 60), // Convert seconds to minutes
-        distance: activity.distance || 0,
-        avgSpeed: activity.average_speed || 0,
-        elevationGain: activity.total_elevation_gain || 0,
-        avgPower: activity.average_watts || 0,
-        normalisedPower: activity.weighted_average_watts || 0
-      }));
-
-      setActivities(transformedActivities);
-    } catch (err) {
-      setError(err.message);
-      console.error('Failed to fetch activities:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchActivities(selectedYears);
-  }, [selectedYears, isDemoMode, user]); // Refetch when years selection changes or auth state changes
+    if (searchParams.get('refresh') !== 'true') return;
 
-  // Check for refresh parameter and refetch if present
-  useEffect(() => {
-    const shouldRefresh = searchParams.get('refresh');
-    if (shouldRefresh === 'true') {
-      fetchActivities(selectedYears);
-      // Remove the refresh parameter from URL without causing a page reload
-      const newUrl = window.location.pathname;
-      window.history.replaceState(null, '', newUrl);
-    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete('refresh');
+    window.history.replaceState(null, '', url);
+    setRefreshVersion(version => version + 1);
   }, [searchParams]);
+
+  useEffect(() => {
+    const demoEmail = process.env.NEXT_PUBLIC_DEMO_EMAIL;
+    const useDemoData = isDemoMode || localStorage.getItem('demoMode') === 'true' ||
+      (Boolean(demoEmail) && userEmail === demoEmail);
+    const token = localStorage.getItem('authToken');
+
+    setLoading(true);
+    setError(null);
+    setPage(1);
+
+    // Auth initializes on mount. A profile update for the same email does
+    // not require a second activity request.
+    if (!useDemoData && (!isAuthenticated || !token)) {
+      setActivities([]);
+      return;
+    }
+
+    if (useDemoData) {
+      setActivities(selectedYears.length ? demoActivitiesData.filter(activity =>
+        selectedYears.includes(String(new Date(activity.dateTime).getFullYear()))
+      ) : demoActivitiesData);
+      setLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    async function fetchActivities() {
+      try {
+        let url = `${process.env.NEXT_PUBLIC_API_URL}/strava/activities/`;
+        if (selectedYears.length) {
+          url += `?years=${selectedYears.join(',')}`;
+        }
+        const response = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error('Failed to fetch activities');
+        }
+        const data = await response.json();
+        if (controller.signal.aborted) return;
+
+        setActivities(data.map(activity => ({
+          id: activity.id,
+          name: activity.name,
+          dateTime: activity.start_date_local || activity.start_date,
+          elapsedTime: Math.round((activity.elapsed_time || 0) / 60),
+          distance: activity.distance || 0,
+          avgSpeed: activity.average_speed || 0,
+          elevationGain: activity.total_elevation_gain || 0,
+          avgPower: activity.average_watts || 0,
+          normalisedPower: activity.weighted_average_watts || 0,
+        })));
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          setError(err.message);
+          console.error('Failed to fetch activities:', err);
+        }
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }
+
+    fetchActivities();
+    return () => controller.abort();
+  }, [selectedYears, isAuthenticated, isDemoMode, userEmail, refreshVersion]);
 
   // Dark theme colors matching your palette
   const colors = {
@@ -167,6 +167,7 @@ const ActivitiesContent = () => {
       direction = 'desc';
     }
     setSortConfig({ key, direction });
+    setPage(1);
   };
 
   // Filter and sort activities (year filtering now handled by backend)
@@ -198,6 +199,13 @@ const ActivitiesContent = () => {
 
     return filtered;
   }, [activities, minElapsedTime, minNormalisedPower, sortConfig, searchTerm]);
+
+  const matchCount = filteredAndSortedActivities.length;
+  const pageCount = Math.max(1, Math.ceil(matchCount / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const visibleActivities = filteredAndSortedActivities.slice(pageStart, pageStart + PAGE_SIZE);
+  const showResults = !loading && !error;
 
   const SortIcon = ({ column }) => {
     const iconColor = sortConfig.key === column ? colors.primary : colors.mutedForeground;
@@ -239,12 +247,12 @@ const ActivitiesContent = () => {
             View and analyze your training activities
           </p>
           {loading && (
-            <p className="text-sm mt-2" style={{ color: colors.primary }}>
+            <p role="status" className="text-sm mt-2" style={{ color: colors.primary }}>
               Loading activities...
             </p>
           )}
           {error && (
-            <p className="text-sm mt-2" style={{ color: colors.accent }}>
+            <p role="alert" className="text-sm mt-2" style={{ color: colors.accent }}>
               Error: {error}
             </p>
           )}
@@ -281,7 +289,10 @@ const ActivitiesContent = () => {
                   type="text"
                   placeholder="Start typing activity name..."
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setPage(1);
+                  }}
                   className="w-full px-4 py-3 rounded-lg text-sm transition-colors"
                   style={{
                     backgroundColor: colors.muted,
@@ -353,7 +364,10 @@ const ActivitiesContent = () => {
                       max="300"
                       step="15"
                       value={minElapsedTime}
-                      onChange={(e) => setMinElapsedTime(Number(e.target.value))}
+                      onChange={(e) => {
+                        setMinElapsedTime(Number(e.target.value));
+                        setPage(1);
+                      }}
                       className="w-full h-3 rounded-lg appearance-none cursor-pointer slider-teal"
                       style={{ backgroundColor: colors.muted }}
                     />
@@ -379,7 +393,10 @@ const ActivitiesContent = () => {
                       max="400"
                       step="10"
                       value={minNormalisedPower}
-                      onChange={(e) => setMinNormalisedPower(Number(e.target.value))}
+                      onChange={(e) => {
+                        setMinNormalisedPower(Number(e.target.value));
+                        setPage(1);
+                      }}
                       className="w-full h-3 rounded-lg appearance-none cursor-pointer slider-orange"
                       style={{ backgroundColor: colors.muted }}
                     />
@@ -394,20 +411,23 @@ const ActivitiesContent = () => {
           )}
         </div>
 
-        {/* Data Table */}
+        {showResults && matchCount === 0 && (
+          <p role="status" style={{ color: colors.mutedForeground }}>
+            {activities.length ? 'No activities match your filters.' : 'No activities found for this date range.'}
+          </p>
+        )}
+
+        {showResults && matchCount > 0 && (
         <div className="rounded-xl shadow-sm overflow-hidden" style={{ 
           backgroundColor: colors.card, 
           border: `1px solid ${colors.border}` 
         }}>
           <div className="px-6 py-4 border-b" style={{ borderColor: colors.border }}>
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium" style={{ color: colors.foreground }}>
-                Showing <span className="font-semibold" style={{ color: colors.primary }}>{filteredAndSortedActivities.length}</span> of <span className="font-semibold" style={{ color: colors.chart3 }}>{activities.length}</span> activities
+              <p role="status" className="text-sm font-medium" style={{ color: colors.foreground }}>
+                Showing {pageStart + 1}–{pageStart + visibleActivities.length} of {matchCount}
+                {matchCount === activities.length ? ' activities' : ` matches (${activities.length} activities loaded)`}
               </p>
-              <div className="flex items-center space-x-2">
-                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors.primary }}></div>
-                <span className="text-xs" style={{ color: colors.mutedForeground }}>Live Data</span>
-              </div>
             </div>
           </div>
           
@@ -440,7 +460,7 @@ const ActivitiesContent = () => {
                 </tr>
               </thead>
               <tbody style={{ backgroundColor: colors.card }}>
-                {filteredAndSortedActivities.map((activity, index) => (
+                {visibleActivities.map((activity, index) => (
                   <tr key={activity.id} 
                     className="transition-colors hover:opacity-80"
                     style={{ 
@@ -505,7 +525,22 @@ const ActivitiesContent = () => {
               </tbody>
             </table>
           </div>
+          {pageCount > 1 && (
+            <nav aria-label="Activity list pagination" className="flex items-center justify-between gap-4 px-6 py-4 border-t"
+              style={{ borderColor: colors.border, color: colors.foreground }}>
+              <button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}
+                className="rounded px-3 py-2 disabled:opacity-50" style={{ backgroundColor: colors.muted }}>
+                Previous
+              </button>
+              <span className="text-sm">Page {currentPage} of {pageCount}</span>
+              <button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}
+                className="rounded px-3 py-2 disabled:opacity-50" style={{ backgroundColor: colors.muted }}>
+                Next
+              </button>
+            </nav>
+          )}
         </div>
+        )}
       </div>
 
       <style jsx>{`
