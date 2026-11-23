@@ -1,5 +1,58 @@
 # Cheat Sheet
 
+## Quick start: local — frontend, Flask and database
+
+All local services run in Docker Compose: PostgreSQL (`db`), Flask (`flask`) and Next.js (`frontend`). Flask handles local auth and coaching in-process; **Zappa, SAM and Vercel are not needed locally**.
+
+```bash
+cd ~/dev/veloclicks
+open -a Docker
+docker compose up --build -d     # start all three components
+docker compose ps                # check service status
+docker compose logs -f flask     # Flask logs (Ctrl+C to stop viewing)
+```
+
+Open http://localhost:3000/login; check Flask at http://localhost:5002/health.
+
+```bash
+cd ~/dev/veloclicks
+docker compose restart flask     # restart backend after source changes if needed
+docker compose up --build -d     # rebuild after dependency/image changes
+docker compose down              # stop everything; database volume is retained
+```
+
+## Quick start: production — Vercel, Zappa and Lambdas
+
+Production components are already hosted remotely; **deployment updates them** rather than starting local processes. The live AWS Zappa stage is called `dev`.
+
+**0. Merge tested changes to main and push:**
+
+```bash
+cd ~/dev/veloclicks
+git checkout main
+git pull origin main
+git merge feature/coaching-feedback-v2  # omit if already merged
+git push origin main
+```
+
+**1. Frontend (Vercel):** pushing `main` automatically deploys Next.js. Check https://vercel.com/veloclicks/~/deployments and https://veloclicks-prod.vercel.app.
+
+**2. Flask API (Zappa):**
+
+```bash
+cd ~/dev/veloclicks/zappa
+source .venv/bin/activate       # hidden directory; ls -la to show it
+export AWS_PROFILE=zappa-deployer
+zappa update dev
+zappa tail dev --since 1h
+```
+
+**3. Auth and Coach Lambdas (SAM):** from `~/dev/veloclicks/aws/lambdas`, run `sam build` and the **full** `sam deploy` command documented in **Deploy the Auth + Coach Lambdas (SAM)** below. Both Lambdas share the `veloclicks-lambdas` CloudFormation stack. **Zappa does not deploy either standalone Lambda.**
+
+For coaching changes involving frontend, Flask and Coach Lambda, deploy **all three**: Vercel automatically on push, then Zappa and SAM manually. For isolated changes, deploy only affected components.
+
+---
+
 ## Local
 
 Docker Compose starts PostgreSQL, Flask and Next.js. Flask serves authentication and
@@ -64,11 +117,16 @@ code ~/dev/veloclicks
 
 
 ### Resetting coaching insights locally
+
+```bash
+cd ~/dev/veloclicks
 docker compose exec -T db sh -c \
   'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
 DELETE FROM vc_activity_insight
 WHERE insight_type = 'ACTIVITY_INSIGHT';
 SQL
+```
+
 ---
 
 ## Production (Remote)
