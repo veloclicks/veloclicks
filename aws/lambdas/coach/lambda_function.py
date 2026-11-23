@@ -11,6 +11,5 @@ def lambda_handler(event, context):
     """Read the invocation fields and return the existing coaching result."""
     return coaching_result(
         event.get("llm_payload", {}),
-        event.get("detail_level", "simple"),
-        event.get("agent", "activity"),
+
     )
