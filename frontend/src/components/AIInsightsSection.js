@@ -17,12 +17,12 @@ const AIInsightsSection = ({ activityId, isPremiumUser, colors }) => {
     'Content-Type': 'application/json',
   };
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (regenerate = false) => {
     try {
       setLoading(true);
       setError(null);
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/ai-coach/activity/${activityId}`,
+        `${process.env.NEXT_PUBLIC_API_URL}/ai-coach/activity/${activityId}${regenerate ? "?regenerate=1" : ""}`,
         { headers: authHeaders }
       );
       if (!response.ok) {
@@ -140,6 +140,11 @@ const AIInsightsSection = ({ activityId, isPremiumUser, colors }) => {
                   ) : (
                     <div className="whitespace-pre-wrap">{String(insights).replace(/\\*\\*/g, '')}</div>
                   )}
+                  <button onClick={() => handleGenerate(true)} disabled={loading}
+                    className="text-xs underline disabled:opacity-50" style={{ color: colors.mutedForeground }}>
+                    {loading ? "Regenerating…" : "Regenerate feedback"}
+                  </button>
+                  {error && <p className="text-sm text-red-500">{error}</p>}
                 </div>
               ) : (
                 <div className="text-center py-8">
@@ -147,7 +152,7 @@ const AIInsightsSection = ({ activityId, isPremiumUser, colors }) => {
                     Get AI-powered analysis of your training session with personalized insights and recommendations
                   </p>
                   <button
-                    onClick={handleGenerate}
+                    onClick={() => handleGenerate()}
                     disabled={loading}
                     className="px-6 py-3 rounded-lg font-medium transition-colors hover:opacity-90 disabled:opacity-50"
                     style={{ backgroundColor: colors.accent, color: 'white' }}
