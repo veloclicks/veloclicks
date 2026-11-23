@@ -91,3 +91,4 @@ aws/lambdas/env.local.json
 flask/app/output/
 output/
 analytics-fixtures.json
+/.smoke-account.json
