@@ -46,31 +46,35 @@ def activity_summary(user_id: int, activity_id: int) -> dict:
     return _activity_payload(user_id, activity_id)
 
 
-def activity_coaching(user_id: int, activity_id: int, detail_level: str,
-                      generate: Callable[[dict, str], dict]) -> dict:
+def activity_coaching(user_id: int, activity_id: int,
+                      generate: Callable[[dict], dict]) -> dict:
     """Read the stored insight or generate and persist feedback for this activity."""
     _authorize_activity(user_id, activity_id)
-    return generate_activity_insight(user_id, activity_id, detail_level, generate)
+    return generate_activity_insight(user_id, activity_id, generate)
 
 
-def generate_activity_insight(user_id: int, activity_id: int, detail_level: str,
-                              generate: Callable[[dict, str], dict]) -> dict:
+def generate_activity_insight(user_id: int, activity_id: int,
+                              generate: Callable[[dict], dict]) -> dict:
     """Read or generate an insight for an authorized API request or an admin command."""
     insight_type = "ACTIVITY_INSIGHT"
-    # Preserve one cached activity insight across both detail levels.
+    # Preserve one cached report per activity, including legacy plain-text reports.
     insight = ActivityInsight.query.filter_by(
         activity_id=activity_id, user_id=user_id, insight_type=insight_type,
     ).first()
     if insight:
-        return {"coaching": insight.coach_insight}
+        try:
+            cached = __import__("json").loads(insight.coach_insight)
+        except (ValueError, TypeError):
+            cached = insight.coach_insight
+        return {"coaching": cached}
 
-    result = generate(_activity_payload(user_id, activity_id), detail_level)
+    result = generate(_activity_payload(user_id, activity_id))
     if not result.get("success"):
         raise CoachingError(result.get("error"), 500)
 
     db.session.add(ActivityInsight(
         activity_id=activity_id, user_id=user_id,
-        insight_type=insight_type, coach_insight=result["coaching"],
+        insight_type=insight_type, coach_insight=__import__("json").dumps(result["coaching"]),
     ))
     db.session.commit()
     return {"coaching": result["coaching"], "token_usage": result.get("token_usage")}
