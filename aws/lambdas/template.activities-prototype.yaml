@@ -14,7 +14,19 @@ Parameters:
     Type: String
     Default: 'http://localhost:3000'
 
+Globals:
+  Api:
+    AccessLogSetting:
+      DestinationArn: !GetAtt ApiAccessLogs.Arn
+      Format: '{"request_id":"$context.requestId","integration_request_id":"$context.integration.requestId","request_time_epoch":"$context.requestTimeEpoch","method":"$context.httpMethod","status":"$context.status","response_latency_ms":"$context.responseLatency","integration_latency_ms":"$context.integrationLatency","response_bytes":"$context.responseLength"}'
+
 Resources:
+  ApiAccessLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/apigateway/veloclicks-activities-access
+      RetentionInDays: 7
+
   ActivitiesPrototype:
     Type: AWS::Serverless::Function
     Properties:
