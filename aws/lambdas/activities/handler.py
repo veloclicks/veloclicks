@@ -42,7 +42,8 @@ def handler(event, context):
         timings["status"] = status
         phase_started = perf_counter()
         response = _response(status, body, headers.get("origin"))
-        timings["response_encoding_ms"] = round((perf_counter() - phase_started) * 1000, 2)
+        timings["json_response_ms"] = round((perf_counter() - phase_started) * 1000, 2)
+        timings["response_bytes"] = len(response["body"].encode("utf-8"))
         return response
     finally:
         timings["handler_ms"] = round((perf_counter() - started) * 1000, 2)
@@ -69,12 +70,15 @@ def _handle_request(event: dict, headers: dict, timings: dict | None = None) -> 
     finally:
         timings["auth_ms"] = round((perf_counter() - phase_started) * 1000, 2)
 
+    timings["user_id"] = user_id
     query = event.get("queryStringParameters") or {}
     raw_query = event.get("rawQueryString")
     if raw_query is not None:
         query = {key: values[0] for key, values in parse_qs(raw_query, keep_blank_values=True).items()}
     elif event.get("multiValueQueryStringParameters"):
         query = {key: values[0] for key, values in event["multiValueQueryStringParameters"].items()}
+
+    timings["page_type"] = "continuation" if "cursor" in query else "initial"
 
     # Reject unauthorized requests before importing SQLAlchemy or opening a DB connection.
     phase_started = perf_counter()
