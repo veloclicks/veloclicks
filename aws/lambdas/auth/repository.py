@@ -1,5 +1,8 @@
 """PostgreSQL adapter for accounts used by the standalone Auth Lambda."""
 
+import json
+from time import perf_counter
+
 from psycopg2.errors import UniqueViolation
 
 from shared_auth.service import Credentials, DuplicateUser
@@ -29,12 +32,25 @@ class PostgresUserRepository:
 
     def _find(self, condition: str, values: tuple) -> Credentials | None:
         """Run an internal fixed predicate with parameterised user values."""
-        with self.get_connection().cursor() as cursor:
+        started = perf_counter()
+        connection = self.get_connection()
+        connection_ms = round((perf_counter() - started) * 1000, 2)
+        with connection.cursor() as cursor:
+            started = perf_counter()
             cursor.execute(
                 f"SELECT id, email, password_hash FROM vc_user WHERE {condition}",
                 values,
             )
+            query_ms = round((perf_counter() - started) * 1000, 2)
+            started = perf_counter()
             row = cursor.fetchone()
+            fetch_ms = round((perf_counter() - started) * 1000, 2)
+        print(json.dumps({
+            "event": "auth_database_latency",
+            "connection_checkout_ms": connection_ms,
+            "query_execute_ms": query_ms,
+            "result_fetch_ms": fetch_ms,
+        }))
         return Credentials(**row) if row else None
 
     def create(self, username: str, email: str, password_hash: str,
