@@ -3,6 +3,7 @@
 from collections.abc import Mapping
 from datetime import datetime, timedelta
 from functools import lru_cache
+from time import perf_counter
 
 from itsdangerous import BadData, URLSafeSerializer
 from sqlalchemy import (
@@ -76,8 +77,10 @@ def _date_window(years: str) -> tuple[datetime, datetime]:
         raise InvalidPage("Invalid years parameter") from error
 
 
-def activity_page(engine: Engine, user_id: int, query: Mapping[str, str], secret: str) -> dict:
+def activity_page(engine: Engine, user_id: int, query: Mapping[str, str], secret: str, timings: dict | None = None) -> dict:
     """Return one page with a signed cursor compatible with the Flask API."""
+    timings = {} if timings is None else timings
+    started = perf_counter()
     cursor = query.get("cursor")
     if "limit" not in query:
         raise InvalidPage("Cursor requires a limit" if cursor is not None else "Limit is required")
@@ -116,11 +119,36 @@ def activity_page(engine: Engine, user_id: int, query: Mapping[str, str], secret
 
     # Read one extra row to detect a continuation without a count query.
     statement = statement.order_by(columns.start_date.desc(), columns.id.desc()).limit(limit + 1)
-    with engine.connect() as connection:
-        rows = connection.execute(statement).mappings().all()
+    timings["prepare_query_ms"] = round((perf_counter() - started) * 1000, 2)
+    started = perf_counter()
+    try:
+        with engine.connect() as connection:
+            timings["connection_checkout_ms"] = round((perf_counter() - started) * 1000, 2)
+            started = perf_counter()
+            try:
+                try:
+                    result = connection.execute(statement)
+                finally:
+                    timings["query_execute_ms"] = round((perf_counter() - started) * 1000, 2)
+                    started = perf_counter()
+                try:
+                    rows = result.mappings().all()
+                finally:
+                    timings["result_fetch_ms"] = round((perf_counter() - started) * 1000, 2)
+            finally:
+                started = perf_counter()
+    finally:
+        phase = "connection_release_ms" if "connection_checkout_ms" in timings else "connection_checkout_ms"
+        timings[phase] = round((perf_counter() - started) * 1000, 2)
+
+    started = perf_counter()
 
     next_cursor = None
     if len(rows) > limit:
         last = rows[limit - 1]
         next_cursor = signer.dumps([scope, end.isoformat(), last.start_date.isoformat(), last.id])
-    return {"activities": [_serialize(row) for row in rows[:limit]], "next_cursor": next_cursor}
+    result = {"activities": [_serialize(row) for row in rows[:limit]], "next_cursor": next_cursor}
+    timings["row_serialization_ms"] = round((perf_counter() - started) * 1000, 2)
+    timings["activity_count"] = len(result["activities"])
+    timings["has_more"] = next_cursor is not None
+    return result
