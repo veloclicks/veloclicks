@@ -126,12 +126,19 @@ def activity_page(engine: Engine, user_id: int, query: Mapping[str, str], secret
             timings["connection_checkout_ms"] = round((perf_counter() - started) * 1000, 2)
             started = perf_counter()
             try:
-                rows = connection.execute(statement).mappings().all()
+                try:
+                    result = connection.execute(statement)
+                finally:
+                    timings["query_execute_ms"] = round((perf_counter() - started) * 1000, 2)
+                    started = perf_counter()
+                try:
+                    rows = result.mappings().all()
+                finally:
+                    timings["result_fetch_ms"] = round((perf_counter() - started) * 1000, 2)
             finally:
-                timings["query_fetch_ms"] = round((perf_counter() - started) * 1000, 2)
                 started = perf_counter()
     finally:
-        phase = "connection_release_ms" if "query_fetch_ms" in timings else "connection_checkout_ms"
+        phase = "connection_release_ms" if "connection_checkout_ms" in timings else "connection_checkout_ms"
         timings[phase] = round((perf_counter() - started) * 1000, 2)
 
     started = perf_counter()
@@ -142,4 +149,6 @@ def activity_page(engine: Engine, user_id: int, query: Mapping[str, str], secret
         next_cursor = signer.dumps([scope, end.isoformat(), last.start_date.isoformat(), last.id])
     result = {"activities": [_serialize(row) for row in rows[:limit]], "next_cursor": next_cursor}
     timings["row_serialization_ms"] = round((perf_counter() - started) * 1000, 2)
+    timings["activity_count"] = len(result["activities"])
+    timings["has_more"] = next_cursor is not None
     return result
