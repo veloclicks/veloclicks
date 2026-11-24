@@ -16,7 +16,19 @@ Parameters:
     Type: String
     NoEcho: true
 
+Globals:
+  Api:
+    AccessLogSetting:
+      DestinationArn: !GetAtt ApiAccessLogs.Arn
+      Format: '{"request_id":"$context.requestId","integration_request_id":"$context.integration.requestId","request_time_epoch":"$context.requestTimeEpoch","method":"$context.httpMethod","status":"$context.status","response_latency_ms":"$context.responseLatency","integration_latency_ms":"$context.integrationLatency","response_bytes":"$context.responseLength"}'
+
 Resources:
+  ApiAccessLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/apigateway/veloclicks-auth-access
+      RetentionInDays: 7
+
   CoachFunction:
     Type: AWS::Serverless::Function
     Properties:
