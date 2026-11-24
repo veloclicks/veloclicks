@@ -40,7 +40,7 @@ graph TB
 **Notes**
 - Auth and Coach are deployed together under one CloudFormation stack (`veloclicks-lambdas`, from `aws/lambdas/template.yaml`). Flask is deployed separately via Zappa, unrelated tooling.
 - Only the frontend's **login** call was cut over to the Auth Lambda. **Register** still goes through Flask, even though the Auth Lambda also implements `/api/register` — see the Register sequence below.
-- There is no "production" AWS environment — only `dev` exists (see [claude.md](../claude.md)). The Vercel frontend and Postgres DB are the only genuinely production-facing pieces today.
+- There is no "production" AWS environment — only `dev` exists (see [claude.md](../../claude.md)). The Vercel frontend and Postgres DB are the only genuinely production-facing pieces today.
 
 ## Component diagram (C4, level 3)
 
