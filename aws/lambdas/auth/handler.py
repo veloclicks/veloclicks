@@ -1,11 +1,17 @@
 """API Gateway adapter for standalone authentication."""
 
+from time import perf_counter
+
+_module_started = perf_counter()
+
 import json
 import os
 
 from shared_auth import http_contract
 
 _auth_service = None
+_module_import_ms = round((perf_counter() - _module_started) * 1000, 2)
+_first_invocation = True
 
 
 def get_auth_service():
@@ -26,6 +32,30 @@ def get_auth_service():
 
 
 def handler(event, context):
+    global _first_invocation
+    started = perf_counter()
+    path = event.get("path") or event.get("rawPath", "")
+    operation = next((name for name in ("login", "register", "refresh") if path.endswith("/" + name)), "other")
+    timings = {
+        "event": "auth_latency",
+        "operation": operation,
+        "request_id": getattr(context, "aws_request_id", None),
+        "gateway_request_id": event.get("requestContext", {}).get("requestId"),
+        "cold_invocation": _first_invocation,
+    }
+    if _first_invocation:
+        timings["module_import_ms"] = _module_import_ms
+    _first_invocation = False
+    try:
+        response = _handle_request(event, timings)
+        timings["status"] = response["statusCode"]
+        return response
+    finally:
+        timings["handler_ms"] = round((perf_counter() - started) * 1000, 2)
+        print(json.dumps(timings, separators=(",", ":")))
+
+
+def _handle_request(event, timings):
     """Map API Gateway v1 or v2 requests to the standalone auth API contract."""
     path = event.get("path") or event.get("rawPath", "")
     method = event.get("httpMethod") or event.get("requestContext", {}).get("http", {}).get("method")
@@ -42,7 +72,21 @@ def handler(event, context):
         return _response(400, {"message": "Invalid JSON"})
 
     if path.endswith("/login"):
-        result, status = http_contract.login(get_auth_service(), body)
+        phase_started = perf_counter()
+        service = get_auth_service()
+        timings["service_setup_ms"] = round((perf_counter() - phase_started) * 1000, 2)
+        phase_started = perf_counter()
+        result, status = http_contract.login(service, body)
+        timings["login_ms"] = round((perf_counter() - phase_started) * 1000, 2)
+        if status == 200:
+            from shared_auth.verification import access_token_user_id
+            import jwt
+            token = result.get("access_token")
+            if isinstance(token, str):
+                try:
+                    timings["user_id"] = access_token_user_id(token, os.environ["SECRET_KEY"])
+                except jwt.InvalidTokenError:
+                    pass
     elif path.endswith("/register"):
         result, status = http_contract.register(get_auth_service(), body)
     elif path.endswith("/refresh"):
@@ -51,7 +95,10 @@ def handler(event, context):
         result, status = http_contract.refresh(get_auth_service(), body, authorization)
     else:
         return _response(404, {"message": "Not found"})
-    return _response(status, result)
+    phase_started = perf_counter()
+    response = _response(status, result)
+    timings["json_response_ms"] = round((perf_counter() - phase_started) * 1000, 2)
+    return response
 
 
 def _response(status_code: int, body: dict) -> dict:
