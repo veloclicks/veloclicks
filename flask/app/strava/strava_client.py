@@ -1,11 +1,10 @@
 import logging
-import time
 import requests
 
 
 def exchange_authorization_code(code, client_id, client_secret, redirect_uri):
     """Exchange OAuth authorization code for access/refresh tokens."""
-    response = requests.post('https://www.strava.com/oauth/token', data={
+    response = _request('POST', 'https://www.strava.com/oauth/token', data={
         'client_id': client_id,
         'client_secret': client_secret,
         'code': code,
@@ -13,55 +12,90 @@ def exchange_authorization_code(code, client_id, client_secret, redirect_uri):
         'redirect_uri': redirect_uri,
     })
     if not response.ok:
-        logging.error(f"exchange_authorization_code() failed: {response.text}")
+        logging.error("Strava OAuth exchange failed with HTTP %s", response.status_code)
         return None
     return response.json()
 
 
-def refresh_access_token(refresh_token, client_id, client_secret):
-    """Refresh an expired access token. Returns token data dict or None."""
-    url = "https://www.strava.com/api/v3/oauth/token"
-    response = requests.post(url, {
-        'client_id': client_id,
-        'client_secret': client_secret,
-        'refresh_token': refresh_token,
-        'grant_type': 'refresh_token',
+class StravaFailure(Exception):
+    """Classify Strava failures without retaining sensitive response contents."""
+
+    def __init__(self, reason: str, retry_after: int = 0):
+        super().__init__(reason)
+        self.reason = reason
+        self.retry_after = retry_after
+
+
+PAGE_SIZE = 100
+
+
+def _request(method, url, **kwargs):
+    """Bound network waits and classify recoverable upstream failures."""
+    try:
+        response = requests.request(method, url, timeout=(3, 8), **kwargs)
+    except requests.RequestException as error:
+        raise StravaFailure("upstream") from error
+    if response.status_code == 429:
+        raw = response.headers.get("Retry-After", "")
+        raise StravaFailure("rate_limit", int(raw) if raw.isdecimal() else 900)
+    return response
+
+
+def _json(response):
+    """Treat malformed upstream JSON as a retryable retrieval failure."""
+    try:
+        return response.json()
+    except ValueError as error:
+        raise StravaFailure("upstream") from error
+
+
+def refresh_credentials(refresh_token: str, client_id: str, client_secret: str) -> dict:
+    """Refresh credentials or distinguish rejected authorization from outages."""
+    response = _request("POST", "https://www.strava.com/api/v3/oauth/token", data={
+        "client_id": client_id, "client_secret": client_secret,
+        "refresh_token": refresh_token, "grant_type": "refresh_token",
     })
-    jresponse = response.json()
-    logging.debug(f"refresh_access_token() status: {response.status_code}")
-    if 'access_token' not in jresponse:
-        logging.error(f"refresh_access_token() failed. Response: {jresponse}")
+    if response.status_code in (401, 403):
+        raise StravaFailure("reconnect")
+    if response.status_code == 400:
+        body = _json(response)
+        if isinstance(body, dict) and (body.get("error") == "invalid_grant" or any(
+            isinstance(field, dict) and field.get("field") == "refresh_token"
+            for field in (body.get("errors") or [])
+        )):
+            raise StravaFailure("reconnect")
+    if not response.ok:
+        raise StravaFailure("upstream")
+    body = _json(response)
+    if not isinstance(body, dict) or not all(body.get(key) for key in ("access_token", "refresh_token", "expires_at")):
+        raise StravaFailure("upstream")
+    return body
+
+
+def refresh_access_token(refresh_token, client_id, client_secret):
+    """Return refreshed credentials for existing activity detail callers."""
+    try:
+        return refresh_credentials(refresh_token, client_id, client_secret)
+    except StravaFailure:
         return None
-    return jresponse
 
 
-def fetch_activities(access_token, before_epoch, after_epoch):
-    """Paginated fetch of activities from Strava. Returns list of raw activity dicts or None on error."""
-    url = 'https://www.strava.com/api/v3/athlete/activities/'
-    headers = {'Authorization': f'Bearer {access_token}'}
-    page = 1
-    items_per_page = 30
-    all_activities = []
-
-    while True:
-        params = {'after': after_epoch, 'before': before_epoch, 'page': page, 'per_page': items_per_page}
-        try:
-            response = requests.get(url, headers=headers, params=params)
-            if response.status_code != 200:
-                logging.error(f"fetch_activities() failed: {response.json()}")
-                return None
-            activities = response.json()
-            all_activities.extend(activities)
-            if len(activities) < items_per_page:
-                break
-            page += 1
-        except Exception as e:
-            logging.error(f"fetch_activities() exception: {e}")
-            return None
-        time.sleep(2)
-
-    logging.info(f"fetch_activities() retrieved {len(all_activities)} activities")
-    return all_activities
+def fetch_activity_page(access_token: str, start: int, end: int, page: int) -> list[dict]:
+    """Fetch one Strava page with an inclusive lower and exclusive upper bound."""
+    params = {"before": end, "page": page, "per_page": PAGE_SIZE}
+    # Strava describes 'after' as exclusive. Include the exact first second.
+    if start > 0:
+        params["after"] = start - 1
+    response = _request("GET", "https://www.strava.com/api/v3/athlete/activities",
+                        headers={"Authorization": f"Bearer {access_token}"}, params=params)
+    if response.status_code in (401, 403):
+        raise StravaFailure("reconnect")
+    if not response.ok:
+        raise StravaFailure("upstream")
+    data = _json(response)
+    if not isinstance(data, list) or len(data) > PAGE_SIZE or any(not isinstance(row, dict) for row in data):
+        raise StravaFailure("upstream")
+    return data
 
 
 def fetch_streams(access_token, activity_id, stream_types):

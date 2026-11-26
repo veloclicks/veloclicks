@@ -14,6 +14,14 @@ Parameters:
     Type: String
     Default: 'http://localhost:3000'
 
+  SnapshotWriterRoleArn:
+    Description: Existing Zappa execution role allowed to publish private activity snapshots
+    Type: String
+    Default: ''
+
+Conditions:
+  ConfigureSnapshotWriter: !Not [!Equals [!Ref SnapshotWriterRoleArn, '']]
+
 Globals:
   Api:
     AccessLogSetting:
@@ -27,6 +35,46 @@ Resources:
       LogGroupName: /aws/apigateway/veloclicks-activities-access
       RetentionInDays: 7
 
+  ActivitySnapshots:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  ActivitySnapshotPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ActivitySnapshots
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt ActivitySnapshots.Arn
+              - !Sub '${ActivitySnapshots.Arn}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+          - !If
+            - ConfigureSnapshotWriter
+            - Effect: Allow
+              Principal:
+                AWS: !Ref SnapshotWriterRoleArn
+              Action: [s3:GetObject, s3:PutObject]
+              Resource: !Sub '${ActivitySnapshots.Arn}/activity-snapshots/*'
+            - !Ref AWS::NoValue
+
   ActivitiesPrototype:
     Type: AWS::Serverless::Function
     Properties:
@@ -35,11 +83,17 @@ Resources:
       Runtime: python3.11
       MemorySize: 256
       Timeout: 10
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action: s3:GetObject
+            Resource: !Sub '${ActivitySnapshots.Arn}/activity-snapshots/*'
       Environment:
         Variables:
           DATABASE_URL: !Ref DatabaseUrl
           SECRET_KEY: !Ref SecretKey
           CORS_ORIGIN: !Ref CorsOrigin
+          ACTIVITY_SNAPSHOT_BUCKET: !Ref ActivitySnapshots
       Events:
         List:
           Type: Api
@@ -52,7 +106,22 @@ Resources:
             Path: /strava/activities/
             Method: options
 
+        Snapshot:
+          Type: Api
+          Properties:
+            Path: /strava/activities/snapshot
+            Method: get
+        SnapshotPreflight:
+          Type: Api
+          Properties:
+            Path: /strava/activities/snapshot
+            Method: options
+
 Outputs:
+  ActivitySnapshotBucket:
+    Description: Private bucket for the Zappa activity snapshot worker
+    Value: !Ref ActivitySnapshots
+
   ActivitiesApiUrl:
     Description: Base URL for the paginated Activities API
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"

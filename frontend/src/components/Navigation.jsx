@@ -3,12 +3,17 @@ import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { Activity, RefreshCw, User, LogOut, Brain } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useActivitySync } from '../contexts/ActivitySyncContext';
 
 const Navigation = () => {
   const router = useRouter();
   const pathname = usePathname();
   const [isSyncing, setIsSyncing] = useState(false);
   const { isAuthenticated, user, logout, isDemoMode } = useAuth();
+  const sync = useActivitySync();
+  const isProgressive = sync?.enabled;
+  const syncing = isProgressive ? sync.starting || sync.status?.syncing : isSyncing;
+  const reconnect = isProgressive && sync.status?.reconnect;
 
   // Check for auth token or demo mode on mount - redirect to login if neither found
   useEffect(() => {
@@ -66,7 +71,13 @@ const Navigation = () => {
                 <button
                   className="px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:opacity-80 flex items-center space-x-2"
                   style={{ color: colors.mutedForeground }}
+                  disabled={Boolean(syncing || reconnect)}
                   onClick={async () => {
+                    if (isProgressive) {
+                      const result = await sync.startSync();
+                      if (result?.syncing) router.push('/activities');
+                      return;
+                    }
                     if (isSyncing) return; // Prevent multiple syncs
 
                     setIsSyncing(true);
@@ -103,11 +114,23 @@ const Navigation = () => {
                     }
                   }}
                 >
-                  <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                  <span>Sync</span>
+                  <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+                  <span>{syncing ? 'Synchronising…' : 'Sync'}</span>
                 </button>
               )}
-              
+
+              {reconnect && (
+                <button type="button" onClick={() => router.push('/profile/strava-connect')}
+                  className="px-3 py-2 text-sm underline" style={{ color: colors.foreground }}>
+                  Reconnect Strava
+                </button>
+              )}
+              {isProgressive && !reconnect && !syncing && sync.status?.error && (
+                <span role="status" className="self-center text-sm" style={{ color: colors.foreground }}>
+                  Sync failed
+                </span>
+              )}
+
               <button
                 className="px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:opacity-80"
                 style={isActive('/visualizations') ? {

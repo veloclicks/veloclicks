@@ -5,6 +5,8 @@ import Navigation from '../../components/Navigation';
 import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Filter, TrendingUp, Activity, RefreshCw, User } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../../contexts/AuthContext';
+import { useActivitySync } from '../../contexts/ActivitySyncContext';
+import { inActivityRange, mergeActivityRows, toActivityRow } from '../../utils/activityRows.mjs';
 import { demoActivitiesData } from '../../data/demoActivities';
 
 const PAGE_SIZE = 50;
@@ -13,7 +15,23 @@ const PRODUCTION_ACTIVITIES_API_URL = 'https://1m4c74owqj.execute-api.eu-west-2.
 
 const ActivitiesContent = () => {
   const searchParams = useSearchParams();
-  const { user, isAuthenticated, isDemoMode } = useAuth();
+  const { user, authToken, isAuthenticated, isDemoMode } = useAuth();
+  const sync = useActivitySync();
+  const syncRevision = sync?.status?.revision ?? 0;
+  const syncTier = sync?.status?.tier;
+  const allowedSince = sync?.status?.activity_since?.replace(/Z$/, '');
+  const progressive = Boolean(sync?.enabled);
+  const previousLoad = useRef(null);
+  const observedTier = useRef(null);
+  const [entitlementVersion, setEntitlementVersion] = useState(0);
+
+  useEffect(() => {
+    if (!syncTier) return;
+    if (observedTier.current?.token === authToken && observedTier.current.tier !== syncTier) {
+      setEntitlementVersion(version => version + 1);
+    }
+    observedTier.current = { token: authToken, tier: syncTier };
+  }, [authToken, syncTier]);
   const userEmail = user?.email;
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -39,7 +57,9 @@ const ActivitiesContent = () => {
 
     if (stravaConnected === 'true') {
       const count = activitiesCount ? parseInt(activitiesCount) : 0;
-      setSuccessMessage(`Strava connected successfully! ${count} activities synced.`);
+      setSuccessMessage(count
+        ? `Strava connected successfully! ${count} activities synced.`
+        : 'Strava connected. Activities will appear as they sync.');
       setShowSuccessToast(true);
 
       // Auto-hide toast after 5 seconds
@@ -68,12 +88,19 @@ const ActivitiesContent = () => {
     const demoEmail = process.env.NEXT_PUBLIC_DEMO_EMAIL;
     const useDemoData = isDemoMode || localStorage.getItem('demoMode') === 'true' ||
       (Boolean(demoEmail) && userEmail === demoEmail);
-    const token = localStorage.getItem('authToken');
+    const token = authToken;
+    const key = JSON.stringify([token, selectedYears, useDemoData, entitlementVersion]);
+    const previous = previousLoad.current;
+    const keepLoaded = progressive && previous?.key === key;
+    const activeLoad = { key, token, cacheSettled: keepLoaded && previous.cacheSettled };
+    previousLoad.current = activeLoad;
 
-    setLoading(true);
+    if (!keepLoaded) {
+      setLoading(true);
+      setPage(1);
+      setActivities([]);
+    }
     setError(null);
-    setPage(1);
-    setActivities([]);
     setLoadingOlder(false);
     setOlderError(false);
     retryOlder.current = null;
@@ -98,6 +125,32 @@ const ActivitiesContent = () => {
         : process.env.NEXT_PUBLIC_API_URL);
     const controller = new AbortController();
     const isCurrent = () => !controller.signal.aborted && localStorage.getItem('authToken') === token;
+    const storedRows = new Map();
+    let databaseComplete = false;
+
+    async function loadSnapshot() {
+      try {
+        const response = await fetch(`${apiUrl}/strava/activities/snapshot`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+          cache: 'no-store',
+        });
+        if (!isCurrent()) return;
+        activeLoad.cacheSettled = true;
+        if (!response.ok) return;
+        const { activities: cached } = await response.json();
+        if (!isCurrent() || databaseComplete) return;
+        const rows = cached.map(toActivityRow).filter(row => inActivityRange(row, selectedYears));
+        if (rows.length) {
+          // A slower snapshot never overwrites a fresher database row.
+          setActivities(previous => mergeActivityRows(rows, previous));
+          setLoading(false);
+        }
+      } catch {
+        // The normal database request also handles a missing snapshot.
+      }
+    }
+
 
     async function loadPages(cursor = null) {
       if (!isCurrent()) return;
@@ -110,29 +163,21 @@ const ActivitiesContent = () => {
           const response = await fetch(`${apiUrl}/strava/activities/?${params}`, {
             headers: { Authorization: `Bearer ${token}` },
             signal: controller.signal,
+            cache: 'no-store',
           });
           if (!response.ok) throw new Error('Failed to fetch activities');
 
           const { activities: rows, next_cursor: nextCursor } = await response.json();
           if (!isCurrent()) return;
-          const batch = rows.map(activity => ({
-            id: activity.id,
-            name: activity.name,
-            dateTime: activity.start_date_local || activity.start_date,
-            elapsedTime: Math.round((activity.elapsed_time || 0) / 60),
-            distance: activity.distance || 0,
-            avgSpeed: activity.average_speed || 0,
-            elevationGain: activity.total_elevation_gain || 0,
-            avgPower: activity.average_watts || 0,
-            normalisedPower: activity.weighted_average_watts || 0,
-          }));
-
-          if (cursor) {
-            setActivities(previous => [...previous, ...batch]);
+          const batch = rows.map(toActivityRow);
+          for (const row of batch) storedRows.set(row.id, row);
+          if (!nextCursor) {
+            databaseComplete = true;
+            setActivities(mergeActivityRows([], storedRows.values()));
           } else {
-            setActivities(batch);
-            setLoading(false);
+            setActivities(previous => mergeActivityRows(previous, batch));
           }
+          setLoading(false);
           cursor = nextCursor;
           setLoadingOlder(Boolean(cursor));
         } while (cursor);
@@ -157,9 +202,11 @@ const ActivitiesContent = () => {
       }
     }
 
+    if (progressive && !activeLoad.cacheSettled) loadSnapshot();
     loadPages();
     return () => controller.abort();
-  }, [selectedYears, isAuthenticated, isDemoMode, userEmail, refreshVersion]);
+  }, [selectedYears, isAuthenticated, isDemoMode, userEmail, authToken, refreshVersion,
+      progressive, syncRevision, entitlementVersion]);
 
   // Dark theme colors matching your palette
   const colors = {
@@ -202,9 +249,14 @@ const ActivitiesContent = () => {
     setPage(1);
   };
 
+  // Sync status provides the current server entitlement for rows already in memory.
+  const entitledActivities = useMemo(() => allowedSince
+    ? activities.filter(row => !row.startDate || row.startDate >= allowedSince)
+    : activities, [activities, allowedSince]);
+
   // Filter and sort activities (year filtering now handled by backend)
   const filteredAndSortedActivities = useMemo(() => {
-    let filtered = activities.filter(activity => {
+    let filtered = entitledActivities.filter(activity => {
       const matchesSearch = searchTerm === '' ||
         (activity.name && activity.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
@@ -230,14 +282,15 @@ const ActivitiesContent = () => {
     }
 
     return filtered;
-  }, [activities, minElapsedTime, minNormalisedPower, sortConfig, searchTerm]);
+  }, [entitledActivities, minElapsedTime, minNormalisedPower, sortConfig, searchTerm]);
 
   const matchCount = filteredAndSortedActivities.length;
   const pageCount = Math.max(1, Math.ceil(matchCount / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
   const pageStart = (currentPage - 1) * PAGE_SIZE;
   const visibleActivities = filteredAndSortedActivities.slice(pageStart, pageStart + PAGE_SIZE);
-  const showResults = !loading && !error;
+  const showResults = !loading && (!error || activities.length > 0) &&
+    (isDemoMode || previousLoad.current?.token === authToken);
 
   const SortIcon = ({ column }) => {
     const iconColor = sortConfig.key === column ? colors.primary : colors.mutedForeground;
@@ -459,7 +512,9 @@ const ActivitiesContent = () => {
         {showResults && matchCount === 0 && (
           <p role="status" style={{ color: colors.mutedForeground }}>
             {loadingOlder || olderError ? 'No matches among the activities loaded so far.' :
-              activities.length ? 'No activities match your filters.' : 'No activities found for this date range.'}
+              entitledActivities.length ? 'No activities match your filters.' :
+                sync?.status?.syncing ? 'No activities loaded yet. Synchronising with Strava…' :
+                  'No activities found for this date range.'}
           </p>
         )}
 
@@ -472,7 +527,7 @@ const ActivitiesContent = () => {
             <div className="flex items-center justify-between">
               <p role="status" className="text-sm font-medium" style={{ color: colors.foreground }}>
                 Showing {pageStart + 1}–{pageStart + visibleActivities.length} of {matchCount}
-                {matchCount === activities.length ? ' activities' : ` matches (${activities.length} activities loaded)`}
+                {matchCount === entitledActivities.length ? ' activities' : ` matches (${entitledActivities.length} activities loaded)`}
               </p>
               {pageCount > 1 && (
                 <nav aria-label="Top activity list pagination"

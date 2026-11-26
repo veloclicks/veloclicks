@@ -1,5 +1,6 @@
 from .db import db
 from .sync_history import SyncHistory
+from .activity_work import ActivitySyncJob, ActivitySnapshotWork
 from .user import User
 from .strava import Activity
 from .training_zone import TrainingZone

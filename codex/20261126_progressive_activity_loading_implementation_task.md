@@ -77,3 +77,32 @@ Inspect actual paths and current implementation; this list is not exhaustive.
 ## Delivery
 
 Implement the entire feature, not just the next incremental step. Work in coherent commits, validate the integrated result, and leave main ready for the owner's controlled rollout. Coordinate frontend activation with backend migration and cache seeding (use a disabled-by-default rollout mechanism if necessary because main pushes may trigger Vercel deployment). Do not deploy production.
+
+## Implementation and verification
+
+The sync service uses PostgreSQL for durable work, the pagination cursor and completed coverage. Flask and Zappa run the same worker as Docker. The private per-user snapshot uses S3 in AWS and a shared local volume in Docker. The standalone Activities Lambda can serve an authenticated snapshot without database startup when all rows are within the Basic window. A snapshot containing older rows requires a live membership check. The frontend rollout defaults to off outside the local Docker configuration. The [rollout runbook](../docs/progressive_activity_rollout.md) covers migration, seeding, activation, and rollback.
+
+| Requirement | Implementation and verification |
+| --- | --- |
+| BS01 | Activities shows the snapshot while stored data and sync load. The browser check delayed the list response and displayed the snapshot first, then merged a newly persisted row before snapshot regeneration. The empty successful sync test verifies the snapshot is retained. |
+| BS02 | The sync worker persists the first 30 days before claiming older gaps. The new-user test verifies recent-first paging, durable continuation and history import. |
+| BS03 | The snapshot and stored list load alongside recent sync. The manual-cap and coverage tests verify that older gaps remain available for background work, and that existing activity rows do not establish coverage. |
+| BS04 | Authorization failure blocks automatic retries, retains stored activities and prompts reconnect. The authorization and browser checks cover the blocked state and signed OAuth queues fresh work after reconnection. |
+| FR01 | Shared snapshot contract and authenticated Activities Lambda read. Tests verify the 50-row limit, account isolation and a hit with no database imports. |
+| FR02 | Automatic recent sync is limited to 30 days in the sync service. New-user and retry tests exercise the login window. |
+| FR03 | The manual window uses the latest completed recent watermark and a one-year cap. The manual-cap test verifies that historical work does not advance that watermark. |
+| FR04 | The queue takes uncovered entitled intervals from completed coverage. Coverage and new-user tests exercise empty, overlapping, adjacent and interrupted windows. |
+| FR05 | The worker serves recent work before older gaps, which it traverses newest first. The new-user test checks processing order and the Strava boundary test checks the UTC interval translation. |
+| FR06 | The Activities page merges snapshot, stored and fresh rows by ID with UTC descending order and stable ties. The frontend unit tests and delayed-DB browser check exercise ordering, filters and duplicates. |
+| FR07 | PostgreSQL triggers invalidate snapshots on changes and the worker publishes only a changed payload. Snapshot tests cover identical content, edits, missing or corrupt data and membership; the Docker PostgreSQL check verifies real trigger invalidation and replacement. |
+| FR08 | Activity persistence, sync status and snapshot generation are independent. The browser check exercised a new row while the original snapshot was still being served. |
+| FR09 | Navigation uses persistent sync status for the button and reconnect state. The browser check verified disablement during sync, re-enable on completion and disablement for reconnect. The failure and authorization tests cover transitions. |
+| FR10 | All queue entry points serialize on the user row, and workers use PostgreSQL skip-locked claims. The concurrent Docker PostgreSQL check verified two worker claims and one durable cursor. Browser checks distinguish list and cache loading from the sync status. |
+| FR11 | The Strava client applies bounded timeouts and the worker respects retryable errors and the API's Retry-After. Retry tests verify cursor preservation and no coverage for partial work. |
+| FR12 | The job stores the UTC window and page cursor and commits progress atomically. The resume, failed pagination and failed persistence tests exercise recovery. |
+| FR13 | Shared entitlement applies to list, snapshots, Flask activity access and history selection. Tests cover Basic and Premium parity and historical snapshots after membership changes. |
+| FR14 | Entitlement is an access predicate across retrieval paths. The entitlement tests verify Premium can access the same historical rows after a membership change. |
+
+Commands exercised include the Flask pytest suite, `node --test frontend/tests/activityRows.test.mjs`, `npm run build` in `frontend`, `sam validate --lint --template-file template.activities-prototype.yaml --region eu-west-2`, and `sam build --template-file template.activities-prototype.yaml` in `aws/lambdas`. The two frontend tests, production frontend build, SAM lint and SAM build passed. Flask reported 61 passed, 15 subtests passed and one existing AI Coach test failure. That test expects the phrase “Return ONLY a valid JSON object” while the existing prompt says “Return ONLY one valid JSON object”.
+
+An isolated Docker stack with PostgreSQL and the scheduled worker verified migration downgrade to `c4a8d1e7b920` and re-upgrade, concurrent job claims, durable page progress and snapshot replacement. A local Chrome sign-in to an account with 500 synthetic rides measured 11,550 ms to first rows with a fresh dev route compilation and 1,184 ms on the subsequent warm login. A repeat on the final build with the route already compiled measured 929 ms in a fresh browser context and 996 ms in the reused context. The separate standalone snapshot test proves no Flask, SQLAlchemy or PostgreSQL-driver import on a normal cache hit. Live Strava, AWS IAM and S3 access, and production latency remain rollout checks. No production changes were made.

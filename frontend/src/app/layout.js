@@ -1,5 +1,6 @@
 import "./globals.css";
 import { AuthProvider } from '../contexts/AuthContext';
+import { ActivitySyncProvider } from '../contexts/ActivitySyncContext';
 
 export const metadata = {
   title: "Veloclicks",
@@ -11,7 +12,7 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body>
         <AuthProvider>
-          {children}
+          <ActivitySyncProvider>{children}</ActivitySyncProvider>
         </AuthProvider>
       </body>
     </html>

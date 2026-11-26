@@ -1,17 +1,16 @@
-from datetime import datetime, timedelta
-from calendar import monthrange
+from datetime import datetime
 import math
 import logging
 from flask import current_app
 from sqlalchemy import tuple_
 from app.models import db, User, Activity
+from app.shared_activities.entitlement import history_predicate
 from app.strava.constants import (
-    SYNCH_WINDOW_DAYS,
     COORDINATE_SAMPLE_RATE,
     MIN_COORDINATE_POINTS,
     MAX_COORDINATE_POINTS,
 )
-from app.strava import strava_client
+from app.strava import strava_client, synchronisation
 from . import utils as strava_utils
 
 COORDINATE_PRECISION = 6
@@ -20,147 +19,30 @@ ELEVATION_PRECISION = 1
 
 
 def handle_oauth_callback(user_id, code, redirect_uri):
-    """Exchange OAuth code for tokens, persist to user, trigger initial sync."""
-    client_id = current_app.config.get('STRAVA_CLIENT_ID')
-    client_secret = current_app.config.get('STRAVA_CLIENT_SECRET')
-
-    token_data = strava_client.exchange_authorization_code(code, client_id, client_secret, redirect_uri)
-    if not token_data:
-        return {'success': False, 'error': 'token_exchange'}
-
-    user = User.query.get(user_id)
-    if not user:
-        return {'success': False, 'error': 'user_not_found'}
-
-    user.strava_access_token = token_data.get('access_token')
-    user.strava_refresh_token = token_data.get('refresh_token')
-    user.token_expiry_epoch = token_data.get('expires_at')
-    db.session.commit()
-
-    now = datetime.now()
-    before_epoch = int(now.timestamp())
-    after_epoch = int((now - timedelta(days=30)).timestamp())
-
-    activity_count = 0
-    try:
-        sync_result = sync_activities(user_id, before_epoch, after_epoch)
-        if sync_result:
-            activity_count = sync_result.get('new_count', 0)
-            user.last_synch_epoch = before_epoch
-            db.session.commit()
-    except Exception as e:
-        logging.error(f'Failed to sync activities for user {user_id}: {e}')
-
-    return {'success': True, 'activity_count': activity_count}
-
-
-def perform_incremental_sync(user_id):
-    """Incremental sync using last_synch_epoch as start. Updates last_synch_epoch on success."""
-    now = datetime.now()
-    before_epoch = int(now.timestamp())
-
-    user = User.query.get(user_id)
-    if not user:
-        return None
-
-    default_synch_from = int((now - timedelta(days=SYNCH_WINDOW_DAYS)).timestamp())
-    if user.last_synch_epoch:
-        after_epoch = max(user.last_synch_epoch, default_synch_from)
-    else:
-        after_epoch = default_synch_from
-
-    result = sync_activities(user_id, before_epoch, after_epoch)
-
-    if result is not None:
-        user.last_synch_epoch = before_epoch
-        db.session.commit()
-
-    return result
-
-
-def sync_activities(user_id, before_epoch, after_epoch):
-    """Fetch activities from Strava API for the given window and persist to DB."""
-    access_token = strava_utils.get_access_token(user_id)
-    if not access_token:
-        return None
-
-    user = User.query.get(user_id)
-    user_ftp = user.ftp if user else None
-
-    raw_activities = strava_client.fetch_activities(access_token, before_epoch, after_epoch)
-    if raw_activities is None:
-        return None
-
-    processed = []
-    new_count = 0
-
-    for activity in raw_activities:
-        minimal_attrs = strava_utils._get_key_activity_attributes(user_id, activity)
-        processed.append(minimal_attrs)
-        activity_id = activity['id']
-        if not db.session.query(Activity).filter_by(id=activity_id).first():
-            minimal_attrs['ftp'] = user_ftp
-            db.session.add(Activity(**minimal_attrs))
-            db.session.commit()
-            new_count += 1
-            logging.info(f" - {minimal_attrs['name']} on {minimal_attrs['start_date_local']} written to db.")
-        else:
-            logging.debug(f" - {minimal_attrs['name']} already stored.")
-
-    logging.info(f"sync_activities() complete. Processed: {len(processed)}, New: {new_count}")
-    return {
-        'activities': processed,
-        'new_count': new_count,
-        'total_processed': len(processed),
-    }
-
-
-def sync_activities_by_month(user_id, year, month=None):
-    """Sync activities for a year/month. If month is None, processes all 12 months."""
-    months_to_process = [month] if month is not None else list(range(1, 13))
-    total_activities = 0
-    total_new = 0
-    month_results = {}
-
-    for current_month in months_to_process:
-        start_date = datetime(year, current_month, 1)
-        after_epoch = int(start_date.timestamp())
-        last_day = monthrange(year, current_month)[1]
-        end_date = datetime(year, current_month, last_day, 23, 59, 59)
-        before_epoch = int(end_date.timestamp())
-
-        result = sync_activities(user_id, before_epoch, after_epoch)
-
-        if result:
-            month_results[current_month] = {
-                'activities_count': result['total_processed'],
-                'new_count': result['new_count'],
-            }
-            total_activities += result['total_processed']
-            total_new += result['new_count']
-        else:
-            month_results[current_month] = {'error': 'Failed to retrieve activities'}
-
-        import time
-        if month is None and current_month != months_to_process[-1]:
-            time.sleep(5)
-
-    return {
-        'total_activities': total_activities,
-        'total_new': total_new,
-        'months_processed': months_to_process,
-        'month_results': month_results,
-    }
+    """Connect Strava and durably schedule the first 30 days."""
+    return synchronisation.connect(user_id, lambda: strava_client.exchange_authorization_code(
+        code, current_app.config.get("STRAVA_CLIENT_ID"),
+        current_app.config.get("STRAVA_CLIENT_SECRET"), redirect_uri,
+    ))
 
 
 def _stored_activity_query(user_id, start_date, end_date):
-    """Scope stored activities to their owner and the requested date bounds."""
-    query = db.session.query(Activity).filter(Activity.user_id == user_id)
+    """Scope stored activities to the owner and their current entitlement."""
+    query = Activity.query.filter(
+        Activity.user_id == user_id,
+        Activity.start_date.is_not(None),
+        history_predicate(Activity.start_date, User.id, User.membership_type, user_id),
+    )
     if start_date:
         query = query.filter(Activity.start_date >= start_date)
     if end_date:
         query = query.filter(Activity.start_date <= end_date)
     return query
+
+
+def entitled_activity(user_id: int, activity_id: int) -> Activity | None:
+    """Return detail access only for an owned, currently entitled ride."""
+    return _stored_activity_query(user_id, None, None).filter(Activity.id == activity_id).first()
 
 
 def get_stored_activities(user_id, start_date=None, end_date=None):
@@ -307,10 +189,7 @@ def update_rpe(user_id, updates):
         activity_ids.append(activity_id)
         validated_updates.append({"activity_id": activity_id, "rpe": rpe_value})
 
-    activities = Activity.query.filter(
-        Activity.id.in_(activity_ids),
-        Activity.user_id == user_id,
-    ).all()
+    activities = _stored_activity_query(user_id, None, None).filter(Activity.id.in_(activity_ids)).all()
 
     if len(activities) != len(activity_ids):
         found_ids = {a.id for a in activities}

@@ -82,6 +82,9 @@ def create_app(*args, **kwargs) -> Flask:
     # Register CLI commands
     from app.admin.cli import admin
     app.cli.add_command(admin)
+    from app.strava.worker import seed_command, worker_command
+    app.cli.add_command(seed_command)
+    app.cli.add_command(worker_command)
 
     return app
 

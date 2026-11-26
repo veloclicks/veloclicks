@@ -61,29 +61,12 @@ const StravaPartnerContent = () => {
         return;
       }
 
-      // Decode JWT to get user ID (simple decode, not validating signature)
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const userId = payload.user_id;
-
-      // Strava OAuth configuration
-      const clientId = '9899'; // Your Strava app client ID
-      const redirectUri = encodeURIComponent(`${process.env.NEXT_PUBLIC_API_URL}/strava/strava_auth/`);
-      const scope = 'read,activity:read_all';
-      const state = userId; // Pass user ID as state for security
-
-      // Build Strava OAuth URL
-      const stravaAuthUrl = `https://www.strava.com/oauth/authorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`;
-
-      // Debug logging
-      console.log('=== STRAVA AUTH DEBUG ===');
-      console.log('API URL:', process.env.NEXT_PUBLIC_API_URL);
-      console.log('Redirect URI (encoded):', redirectUri);
-      console.log('Redirect URI (decoded):', decodeURIComponent(redirectUri));
-      console.log('Full Strava URL:', stravaAuthUrl);
-      console.log('========================');
-
-      // Redirect to Strava OAuth
-      window.location.href = stravaAuthUrl;
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/strava/oauth-url`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('Could not start Strava authorization');
+      const { url } = await response.json();
+      window.location.assign(url);
 
     } catch (error) {
       console.error('OAuth initiation error:', error);

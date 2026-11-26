@@ -1,16 +1,17 @@
 """Bounded, read-only pages from the existing PostgreSQL activity table."""
 
 from collections.abc import Mapping
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from time import perf_counter
 
-from itsdangerous import BadData, URLSafeSerializer
 from sqlalchemy import (
     BigInteger, Column, DateTime, Float, Integer, MetaData, String, Table,
     create_engine, select, tuple_,
 )
 from sqlalchemy.engine import Engine, make_url
+from shared_activities.entitlement import history_predicate
+from shared_activities.pagination import ActivityCursor, InvalidPage, date_window, limit_value
 
 
 # The prototype mirrors the public projection of Flask's Activity.to_dict()
@@ -36,8 +37,13 @@ activities = Table(
 )
 
 
-class InvalidPage(ValueError):
-    """The request cannot be converted to a valid page of activities."""
+users = Table("vc_user", MetaData(), Column("id", Integer), Column("membership_type", String))
+
+
+def user_tier(engine: Engine, user_id: int) -> str | None:
+    """Read current entitlement for snapshots containing potentially restricted rows."""
+    with engine.connect() as connection:
+        return connection.scalar(select(users.c.membership_type).where(users.c.id == user_id))
 
 
 @lru_cache(maxsize=1)
@@ -65,18 +71,6 @@ def _serialize(row: Mapping) -> dict:
     return data
 
 
-def _date_window(years: str) -> tuple[datetime, datetime]:
-    """Interpret years and the rolling window exactly as the Flask list does."""
-    if not years:
-        end = datetime.now()
-        return end - timedelta(days=180), end
-    try:
-        selected = [int(year.strip()) for year in years.split(",")]
-        return datetime(min(selected), 1, 1), datetime(max(selected), 12, 31, 23, 59, 59)
-    except (ValueError, TypeError) as error:
-        raise InvalidPage("Invalid years parameter") from error
-
-
 def activity_page(engine: Engine, user_id: int, query: Mapping[str, str], secret: str, timings: dict | None = None) -> dict:
     """Return one page with a signed cursor compatible with the Flask API."""
     timings = {} if timings is None else timings
@@ -84,33 +78,21 @@ def activity_page(engine: Engine, user_id: int, query: Mapping[str, str], secret
     cursor = query.get("cursor")
     if "limit" not in query:
         raise InvalidPage("Cursor requires a limit" if cursor is not None else "Limit is required")
-    try:
-        limit = int(query["limit"])
-        if not 1 <= limit <= 50:
-            raise ValueError
-    except (TypeError, ValueError) as error:
-        raise InvalidPage("Limit must be between 1 and 50") from error
-
+    limit = limit_value(query["limit"])
     years = query.get("years") or ""
-    start, end = _date_window(years)
-    signer = URLSafeSerializer(secret, salt="activity-list-cursor")
-    scope = [user_id, years]
+    start, end = date_window(years, datetime.now(timezone.utc).replace(tzinfo=None))
+    signer = ActivityCursor(secret, user_id, years)
     before = None
     if cursor is not None:
-        try:
-            cursor_scope, window_end, date, activity_id = signer.loads(cursor)
-            if cursor_scope != scope:
-                raise ValueError
-            if not years:
-                end = datetime.fromisoformat(window_end)
-                start = end - timedelta(days=180)
-            before = datetime.fromisoformat(date), activity_id
-        except (BadData, TypeError, ValueError) as error:
-            raise InvalidPage("Invalid activity cursor") from error
+        window_end, before = signer.decode(cursor)
+        if window_end is not None:
+            end = window_end
+            start = end - timedelta(days=180)
 
     columns = activities.c
     statement = select(activities).where(
         columns.user_id == user_id,
+        history_predicate(columns.start_date, users.c.id, users.c.membership_type, user_id),
         columns.start_date >= start,
         columns.start_date <= end,
     )
@@ -146,7 +128,7 @@ def activity_page(engine: Engine, user_id: int, query: Mapping[str, str], secret
     next_cursor = None
     if len(rows) > limit:
         last = rows[limit - 1]
-        next_cursor = signer.dumps([scope, end.isoformat(), last.start_date.isoformat(), last.id])
+        next_cursor = signer.encode(end, last.start_date, last.id)
     result = {"activities": [_serialize(row) for row in rows[:limit]], "next_cursor": next_cursor}
     timings["row_serialization_ms"] = round((perf_counter() - started) * 1000, 2)
     timings["activity_count"] = len(result["activities"])

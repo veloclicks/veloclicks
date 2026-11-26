@@ -6,11 +6,16 @@
         "runtime": "python3.11",
         "s3_bucket": "veloclicks-zappa-deployments-eu-west-2",
         "django_settings": null,
+        "debug": false,
         "environment_variables": {
             "FLASK_APP": "__init__:create_app",
             "FLASK_ENV": "production",
+            "LOG_LEVEL": "INFO",
             "SKIP_CELERY": "true"
         },
+        "events": [
+            {"function": "app.strava.worker.tick", "expression": "rate(1 minute)"}
+        ],
         "keep_warm": false,
         "memory_size": 512,
         "timeout_seconds": 70,

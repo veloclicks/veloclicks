@@ -172,3 +172,7 @@ aws logs tail /aws/lambda/veloclicks-auth --follow --region eu-west-2
 - Local directory: `~/dev/veloclicks`
 - Repo: https://github.com/veloclicks/veloclicks.git
 - Credentials (git account, personal access token) — keep these in a password manager / `gh auth login`, not in this file or any committed file.
+
+## Progressive activity loading rollout
+
+See [the progressive activity loading runbook](progressive_activity_rollout.md) for local worker and snapshot seeding commands, production migration ordering, and rollback.

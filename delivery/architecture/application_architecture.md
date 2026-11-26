@@ -262,3 +262,9 @@ sequenceDiagram
     end
     F-->>B: render insight
 ```
+
+## Progressive activity loading
+
+The standalone Activities API serves signed cursor pages and private per-user snapshots. Flask owns Strava OAuth, entitlement-aware detail access, and the durable sync queue. The browser starts snapshot and stored-page requests independently of the worker. A persisted revision signals that newly imported rows can be retrieved.
+
+The same Flask domain worker runs in a dedicated Docker container or an EventBridge-scheduled Zappa invocation. PostgreSQL serializes imports for each account and records successful UTC coverage. Snapshot publication uses a separate per-user lock and generation so it does not block activity persistence. The [rollout runbook](../../docs/progressive_activity_rollout.md) records storage permissions, scheduling, verification, and activation order.

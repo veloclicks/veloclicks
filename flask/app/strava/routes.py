@@ -1,16 +1,19 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 import logging
 from dotenv import load_dotenv
 
 from flask import jsonify, Blueprint, request, g, redirect, current_app
 from app.common.auth import require_auth
-from itsdangerous import BadData, URLSafeSerializer
+from itsdangerous import BadData, URLSafeTimedSerializer
+from urllib.parse import urlencode
 
 load_dotenv()
 from app.models import db, User, Activity, ActivityAnalytics
 from app.models.user import MembershipType
-from app.strava import service
+from app.strava import service, synchronisation
+from app.shared_activities import snapshot
+from app.shared_activities.pagination import ActivityCursor, InvalidPage, date_window, limit_value
 
 strava_bp = Blueprint('strava', __name__, url_prefix='/strava')
 
@@ -37,13 +40,22 @@ def strava_auth():
 
     if not code or not state:
         return redirect(f"{FRONTEND_URL}/profile/strava-connect?error=missing_params")
+    if "activity:read_all" not in (request.args.get("scope") or "").split(","):
+        return redirect(f"{FRONTEND_URL}/profile/strava-connect?error=access_denied")
 
     redirect_uri = f"{request.url_root.rstrip('/')}/strava/strava_auth/"
 
     try:
-        result = service.handle_oauth_callback(int(state), code, redirect_uri)
-    except Exception as e:
-        logging.error(f'Exception in strava_auth: {e}')
+        signer = URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt="strava-oauth-state")
+        user_id = signer.loads(state, max_age=600)
+        if type(user_id) is not int:
+            raise ValueError
+        result = service.handle_oauth_callback(user_id, code, redirect_uri)
+    except (BadData, ValueError):
+        return redirect(f"{FRONTEND_URL}/profile/strava-connect?error=connection_failed")
+    except Exception as error:
+        db.session.rollback()
+        logging.error("Strava OAuth failed (%s)", type(error).__name__)
         return redirect(f"{FRONTEND_URL}/profile/strava-connect?error=connection_failed")
 
     if not result['success']:
@@ -55,20 +67,62 @@ def strava_auth():
 # -------------------------------------------------------------------------------------------
 #                         Sync — incremental sync from last_synch_epoch
 # -------------------------------------------------------------------------------------------
+@strava_bp.get("/oauth-url")
+@require_auth
+def oauth_url():
+    """Bind the Strava callback to the authenticated application's user."""
+    signer = URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt="strava-oauth-state")
+    query = urlencode({
+        "client_id": current_app.config["STRAVA_CLIENT_ID"],
+        "response_type": "code",
+        "redirect_uri": f"{request.url_root.rstrip('/')}/strava/strava_auth/",
+        "scope": "read,activity:read_all",
+        "state": signer.dumps(g.user_id),
+    })
+    return jsonify(url=f"https://www.strava.com/oauth/authorize?{query}")
+
+
 @strava_bp.route('/synch/')
 @require_auth
 def strava_synch():
-    sync_result = service.perform_incremental_sync(g.user_id)
+    """Queue the same manual job for legacy callers."""
+    return jsonify(success=True, new_activities=0, message="Sync requested.",
+                   **synchronisation.enqueue(g.user_id, "manual")), 202
 
-    if sync_result is None:
-        return jsonify({"error": "Failed to fetch activities", "success": False})
 
-    return jsonify({
-        "success": True,
-        "new_activities": sync_result['new_count'],
-        "total_processed": sync_result['total_processed'],
-        "message": f"Sync completed. {sync_result['new_count']} new activities added out of {sync_result['total_processed']} processed.",
-    })
+@strava_bp.post("/sync")
+@require_auth
+def start_sync():
+    """Request a manual or login sync without holding the browser connection."""
+    data = request.get_json(silent=True) or {}
+    kind = data.get("kind", "manual") if isinstance(data, dict) else None
+    if kind not in ("automatic", "manual"):
+        return jsonify(error="Invalid sync kind"), 400
+    return jsonify(synchronisation.enqueue(g.user_id, kind)), 202
+
+
+@strava_bp.get("/sync/status")
+@require_auth
+def sync_status():
+    """Describe current progress for all tabs sharing this user's job."""
+    return jsonify(synchronisation.status(g.user_id))
+
+
+@strava_bp.get("/activities/snapshot")
+@require_auth
+def activity_snapshot():
+    """Return the owner's fast snapshot without querying on recent-only hits."""
+    def tier():
+        user = db.session.get(User, g.user_id)
+        return user.membership_type.value if user else None
+
+    try:
+        result = snapshot.read(g.user_id, tier)
+    except Exception as error:
+        logging.warning("Snapshot unavailable (%s)", type(error).__name__)
+        result = None
+    body, code = (result, 200) if result is not None else ({"error": "Snapshot unavailable"}, 404)
+    return jsonify(body), code, {"Cache-Control": "private, no-store"}
 
 
 # -------------------------------------------------------------------------------------------
@@ -82,54 +136,30 @@ def strava_activities():
     cursor = request.args.get('cursor')
     if limit_param is None and cursor is not None:
         return jsonify(error="Cursor requires a limit"), 400
-    if limit_param is not None:
-        limit = request.args.get('limit', type=int)
-        if limit is None or not 1 <= limit <= 50:
-            return jsonify(error="Limit must be between 1 and 50"), 400
+    years = request.args.get('years') or ""
+    try:
+        limit = limit_value(limit_param) if limit_param is not None else None
+        start, end = date_window(years, datetime.now(timezone.utc).replace(tzinfo=None))
+        signer = ActivityCursor(current_app.config["SECRET_KEY"], g.user_id, years)
+        before = None
+        if cursor is not None:
+            window_end, before = signer.decode(cursor)
+            if window_end is not None:
+                end = window_end
+                start = end - timedelta(days=180)
+    except InvalidPage as error:
+        return jsonify(error=str(error)), 400
 
-    years_param = request.args.get('years')
+    if limit is None:
+        activities = service.get_stored_activities(g.user_id, start, end)
+        return jsonify([activity.to_dict() for activity in activities])
 
-    if years_param:
-        try:
-            selected_years = [int(y.strip()) for y in years_param.split(',')]
-            start_date = datetime(min(selected_years), 1, 1)
-            end_date = datetime(max(selected_years), 12, 31, 23, 59, 59)
-        except (ValueError, TypeError):
-            return jsonify({"error": "Invalid years parameter"}), 400
-    else:
-        now = datetime.now()
-        start_date = now - timedelta(days=180)
-        end_date = now
-
-    if limit_param is None:
-        activities = service.get_stored_activities(g.user_id, start_date, end_date)
-        return jsonify([a.to_dict() for a in activities])
-
-    signer = URLSafeSerializer(current_app.config["SECRET_KEY"], salt="activity-list-cursor")
-    scope = [g.user_id, years_param or ""]
-    before = None
-    if cursor is not None:
-        try:
-            cursor_scope, window_end, date, activity_id = signer.loads(cursor)
-            if cursor_scope != scope:
-                return jsonify(error="Invalid activity cursor"), 400
-            # The rolling 180-day window must stay fixed across continuations.
-            if not years_param:
-                end_date = datetime.fromisoformat(window_end)
-                start_date = end_date - timedelta(days=180)
-            before = (datetime.fromisoformat(date), activity_id)
-        except (BadData, TypeError, ValueError):
-            return jsonify(error="Invalid activity cursor"), 400
-
-    activities, has_more = service.get_stored_activity_page(
-        g.user_id, start_date, end_date, limit, before
-    )
+    activities, has_more = service.get_stored_activity_page(g.user_id, start, end, limit, before)
     next_cursor = None
     if has_more:
         last = activities[-1]
-        next_cursor = signer.dumps([scope, end_date.isoformat(), last.start_date.isoformat(), last.id])
-    return jsonify(activities=[a.to_dict() for a in activities], next_cursor=next_cursor)
-
+        next_cursor = signer.encode(end, last.start_date, last.id)
+    return jsonify(activities=[activity.to_dict() for activity in activities], next_cursor=next_cursor)
 
 # -------------------------------------------------------------------------------------------
 #                         Bulk historical sync (hardcoded 2022–2024 window)
@@ -137,13 +167,8 @@ def strava_activities():
 @strava_bp.route('/strava/all_activities/')
 @require_auth
 def get_all_activities():
-    after_epoch = 1640995200   # 2022-01-01
-    before_epoch = 1704067200  # 2024-01-01
-
-    result = service.sync_activities(g.user_id, before_epoch, after_epoch)
-    if result is not None:
-        return jsonify(result)
-    return jsonify({"error": "Failed to fetch activities"})
+    bounds = (1640995200, 1735689600)
+    return jsonify(success=True, **synchronisation.enqueue(g.user_id, "historical", bounds)), 202
 
 
 # -------------------------------------------------------------------------------------------
@@ -152,7 +177,7 @@ def get_all_activities():
 @strava_bp.route("/activity/<int:id>", methods=["GET"])
 @require_auth
 def activity(id):
-    activity = Activity.query.filter_by(id=id, user_id=g.user_id).first()
+    activity = service.entitled_activity(g.user_id, id)
     if not activity:
         return jsonify({'error': 'Activity not found'}), 404
 
@@ -172,6 +197,8 @@ def activity(id):
 @strava_bp.route("/activity/<int:id>/streams", methods=["GET"])
 @require_auth
 def activity_streams(id):
+    if not service.entitled_activity(g.user_id, id):
+        return jsonify(error="Activity not found"), 404
     stream_types = request.args.get('types', 'latlng').split(',')
     streams_data = service.get_activity_streams(g.user_id, id, stream_types)
 
@@ -187,6 +214,8 @@ def activity_streams(id):
 @strava_bp.route("/activity/<int:id>/elevation-profile", methods=["GET"])
 @require_auth
 def activity_elevation_profile(id):
+    if not service.entitled_activity(g.user_id, id):
+        return jsonify(error="Activity not found"), 404
     profile_data = service.get_elevation_profile(g.user_id, id)
 
     if profile_data is None:
@@ -201,7 +230,7 @@ def activity_elevation_profile(id):
 @strava_bp.route("/activity/<int:id>/rpe", methods=["PUT"])
 @require_auth
 def update_activity_rpe(id):
-    activity = Activity.query.filter_by(id=id, user_id=g.user_id).first()
+    activity = service.entitled_activity(g.user_id, id)
     if not activity:
         return jsonify({'error': 'Activity not found'}), 404
 
@@ -245,7 +274,7 @@ def bulk_update_activities_rpe():
 @strava_bp.route("/activity/<int:id>/calculate-power-metrics", methods=["POST"])
 @require_auth
 def calculate_activity_power_metrics_endpoint(id):
-    activity = Activity.query.filter_by(id=id, user_id=g.user_id).first()
+    activity = service.entitled_activity(g.user_id, id)
     if not activity:
         return jsonify({'error': 'Activity not found'}), 404
 
@@ -281,7 +310,7 @@ def calculate_activity_power_metrics_endpoint(id):
 @strava_bp.route("/activity/<int:id>/calculate-tss", methods=["POST"])
 @require_auth
 def calculate_activity_tss_endpoint(id):
-    activity = Activity.query.filter_by(id=id, user_id=g.user_id).first()
+    activity = service.entitled_activity(g.user_id, id)
     if not activity:
         return jsonify({'error': 'Activity not found'}), 404
 
@@ -349,15 +378,10 @@ def monthly_synch():
         except ValueError:
             return jsonify({"error": "Month must be a valid integer"}), 400
 
-    result = service.sync_activities_by_month(g.user_id, year, month_int)
-
-    if result:
-        return jsonify({
-            "success": True,
-            "total_activities": result['total_activities'],
-            "total_new": result['total_new'],
-            "months_processed": result['months_processed'],
-            "month_results": result['month_results'],
-            "message": f"Successfully synced {result['total_new']} new activities out of {result['total_activities']} total.",
-        })
-    return jsonify({"error": "Failed to retrieve activities", "success": False}), 500
+    start = datetime(year, month or 1, 1, tzinfo=timezone.utc)
+    if month and month < 12:
+        end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+    else:
+        end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+    job = synchronisation.enqueue(g.user_id, "historical", (int(start.timestamp()), int(end.timestamp())))
+    return jsonify(success=True, **job), 202

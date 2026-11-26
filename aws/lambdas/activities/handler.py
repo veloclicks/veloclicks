@@ -70,7 +70,22 @@ def _handle_request(event: dict, headers: dict, timings: dict | None = None) -> 
     finally:
         timings["auth_ms"] = round((perf_counter() - phase_started) * 1000, 2)
 
-    timings["user_id"] = user_id
+    path = event.get("path") or event.get("rawPath") or ""
+    if path.rstrip("/").endswith("/strava/activities/snapshot"):
+        from shared_activities import snapshot
+
+        def tier():
+            from activity_list import database_engine, user_tier
+
+            return user_tier(database_engine(os.environ["DATABASE_URL"]), user_id)
+
+        try:
+            result = snapshot.read(user_id, tier)
+        except Exception as error:
+            logger.warning("Snapshot unavailable (%s)", type(error).__name__)
+            result = None
+        return (200, result) if result is not None else (404, {"error": "Snapshot unavailable"})
+
     query = event.get("queryStringParameters") or {}
     raw_query = event.get("rawQueryString")
     if raw_query is not None:
@@ -103,6 +118,7 @@ def _response(status: int, body: dict, origin: str | None) -> dict:
     allowed_origins = {value.strip() for value in os.getenv("CORS_ORIGIN", "*").split(",")}
     headers = {
         "Content-Type": "application/json",
+        "Cache-Control": "private, no-store",
         "Access-Control-Allow-Headers": "Authorization,Content-Type",
         "Access-Control-Allow-Methods": "GET,OPTIONS",
         "Vary": "Origin",

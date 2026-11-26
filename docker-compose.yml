@@ -27,6 +27,7 @@ services:
       FLASK_APP: app:application
       FRONTEND_URL: http://localhost:3000
       LOCAL_DOMAIN_SERVICES: "1"
+      ACTIVITY_SNAPSHOT_DIRECTORY: /snapshots
       PYTHONPATH: /app
       PYTHONUNBUFFERED: "1"
     healthcheck:
@@ -39,6 +40,26 @@ services:
         condition: service_healthy
     volumes:
       - ./flask:/app
+      - activity_snapshots:/snapshots
+    restart: unless-stopped
+
+  activities-worker:
+    build: ./flask
+    entrypoint: ["flask", "--app", "app:application", "activities-worker", "--watch"]
+    env_file: .env
+    environment:
+      DATABASE_URL: ""
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      PYTHONPATH: /app
+      LOG_LEVEL: INFO
+      ACTIVITY_SNAPSHOT_DIRECTORY: /snapshots
+    depends_on:
+      flask:
+        condition: service_healthy
+    volumes:
+      - ./flask:/app
+      - activity_snapshots:/snapshots
     restart: unless-stopped
 
   frontend:
@@ -47,6 +68,7 @@ services:
       - "3000:3000"
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:5002
+      NEXT_PUBLIC_PROGRESSIVE_ACTIVITY_SYNC: "1"
       NEXT_PUBLIC_AUTH_URL: http://localhost:5002/auth
       NEXT_PUBLIC_DEMO_EMAIL: ${NEXT_PUBLIC_DEMO_EMAIL:-}
     depends_on:
@@ -56,3 +78,4 @@ services:
 
 volumes:
   postgres_data:
+  activity_snapshots:

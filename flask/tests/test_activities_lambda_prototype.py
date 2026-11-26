@@ -67,6 +67,7 @@ def adapters(monkeypatch):
                                    "queryStringParameters": params or {}}, None)
         return (legacy.status_code, legacy.json), (proxy["statusCode"], json.loads(proxy["body"]))
 
+    call.application = app
     return call, prototype
 
 
@@ -168,3 +169,49 @@ def test_cors_allows_both_production_hosts(adapters, monkeypatch):
             assert result["headers"]["Vary"] == "Origin"
             expected = origin if origin in origins else None
             assert result["headers"].get("Access-Control-Allow-Origin") == expected
+
+
+def test_snapshot_hit_without_database_import(tmp_path, monkeypatch):
+    """A cold snapshot hit uses the valid access token and no SQLAlchemy imports."""
+    monkeypatch.setenv("SECRET_KEY", SECRET)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("ACTIVITY_SNAPSHOT_BUCKET", raising=False)
+    monkeypatch.setenv("ACTIVITY_SNAPSHOT_DIRECTORY", str(tmp_path))
+    directory = tmp_path / "activity-snapshots"
+    directory.mkdir()
+    (directory / "1.json").write_text(json.dumps({"user_id": 1, "activities": [
+        {"id": 10, "user_id": 1, "start_date": datetime.now(timezone.utc).isoformat()},
+    ]}))
+    script = """
+import json, os, sys, time
+import jwt
+from handler import handler
+def request(user_id, typ="access", expiration=None):
+    token = jwt.encode({"user_id": user_id, "type": typ, "exp": expiration or time.time()+60},
+                       os.environ["SECRET_KEY"], algorithm="HS256")
+    return handler({"httpMethod": "GET", "path": "/strava/activities/snapshot",
+                    "headers": {"Authorization": "Bearer " + token}}, None)
+response = request(1)
+assert response["statusCode"] == 200 and json.loads(response["body"])["activities"][0]["id"] == 10
+assert request(2)["statusCode"] == 404
+assert request(1, "refresh")["statusCode"] == 401
+assert request(1, expiration=time.time()-60)["statusCode"] == 401
+assert not {"sqlalchemy", "psycopg2", "flask", "activity_list"} & sys.modules.keys()
+"""
+    subprocess.run([sys.executable, "-c", script], cwd=PROTOTYPE, check=True)
+
+
+def test_basic_and_premium_list_entitlement_parity(adapters):
+    """Apply the same rolling window to Flask and standalone pages."""
+    from app.models.user import MembershipType
+
+    call, _ = adapters
+    params = {"years": "2024", "limit": "50"}
+    flask, prototype = call(1, params=params)
+    assert flask == prototype == (200, {"activities": [], "next_cursor": None})
+    with call.application.app_context():
+        db.session.get(User, 1).membership_type = MembershipType.PREMIUM_TIER
+        db.session.commit()
+    flask, prototype = call(1, params=params)
+    assert flask == prototype
+    assert [row["id"] for row in prototype[1]["activities"]] == [2000]
