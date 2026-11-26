@@ -1,6 +1,6 @@
 # Progressive activity loading rollout
 
-This runbook is for the owner-controlled rollout from main. The implementation can be built and exercised locally. A source push can trigger Vercel, so leave `NEXT_PUBLIC_PROGRESSIVE_ACTIVITY_SYNC` unset in production until the migration, APIs and snapshot seed have been verified.
+This runbook is for the owner-controlled rollout from main. The implementation can be built and exercised locally. A source push can trigger Vercel, so publish the production host activation only after the migration, APIs and snapshot seed have been verified.
 
 ## Execution and data safety
 
@@ -171,11 +171,11 @@ aws lambda get-function-configuration --profile vc_admin --region eu-west-2 \
    ```
 
    Inspect only sanitized worker and Gateway logs. Run the seed for the smoke account as well if it uses a different user ID.
-6. Set `NEXT_PUBLIC_PROGRESSIVE_ACTIVITY_SYNC=1` for the production frontend and redeploy through the normal Git/Vercel workflow. The updated reconnect page uses Flask’s authenticated OAuth URL endpoint, so Flask must be live before the frontend build is published. Check initial rows, sync state and subsequent rows on both `www.veloclicks.com` and the Vercel alias. Test reconnect, continued background work after closing the browser, and first-page cold and warm timings. Visualizations and AI Insights should still receive the Flask array contract.
+6. Push the frontend activation through the normal Git/Vercel workflow. The verified production hostnames enable the flow by default. An explicit `NEXT_PUBLIC_PROGRESSIVE_ACTIVITY_SYNC=0` overrides this default. The updated reconnect page uses Flask’s authenticated OAuth URL endpoint, so Flask must be live before the frontend build is published. Check initial rows, sync state and subsequent rows on both `www.veloclicks.com` and the Vercel alias. Test reconnect, continued background work after closing the browser, and first-page cold and warm timings. Visualizations and AI Insights should still receive the Flask array contract.
 
 ## Rollback
 
-Remove the frontend rollout variable and redeploy the current frontend to disable automatic sync and snapshot fetching while keeping the signed OAuth flow. Keep the new migration and the private bucket. Existing queued work can finish. To halt background work, identify the exact `app.strava.worker.tick` EventBridge rule from Zappa status, then disable only that rule:
+Set `NEXT_PUBLIC_PROGRESSIVE_ACTIVITY_SYNC=0` and redeploy, or revert the production host activation commit and push. Both disable automatic sync and snapshot fetching while keeping the signed OAuth flow. Keep the new migration and the private bucket. Existing queued work can finish. To halt background work, identify the exact `app.strava.worker.tick` EventBridge rule from Zappa status, then disable only that rule:
 
 ```bash
 aws events disable-rule --profile vc_admin --region eu-west-2 \

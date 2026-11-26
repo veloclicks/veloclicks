@@ -2,8 +2,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useAuth } from './AuthContext';
+import { isProgressiveActivityEnabled } from '../utils/activityRollout.mjs';
 
-export const progressiveSyncEnabled = process.env.NEXT_PUBLIC_PROGRESSIVE_ACTIVITY_SYNC === '1';
 const ActivitySyncContext = createContext(null);
 
 export function useActivitySync() {
@@ -18,7 +18,8 @@ export function ActivitySyncProvider({ children }) {
   const generation = useRef(0);
   const pending = useRef(null);
   const channel = useRef(null);
-  const enabled = progressiveSyncEnabled && Boolean(authToken) && !isDemoMode;
+  const enabled = Boolean(authToken) && !isDemoMode && typeof window !== 'undefined' &&
+    isProgressiveActivityEnabled(window.location.hostname, process.env.NEXT_PUBLIC_PROGRESSIVE_ACTIVITY_SYNC);
 
   const request = useCallback(async (path, options = {}) => {
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/strava/sync${path}`, {

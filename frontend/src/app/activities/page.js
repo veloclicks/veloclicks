@@ -7,10 +7,10 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { useAuth } from '../../contexts/AuthContext';
 import { useActivitySync } from '../../contexts/ActivitySyncContext';
 import { inActivityRange, mergeActivityRows, toActivityRow } from '../../utils/activityRows.mjs';
+import { isProductionActivityHost } from '../../utils/activityRollout.mjs';
 import { demoActivitiesData } from '../../data/demoActivities';
 
 const PAGE_SIZE = 50;
-const PRODUCTION_HOSTS = new Set(['www.veloclicks.com', 'veloclicks-prod.vercel.app']);
 const PRODUCTION_ACTIVITIES_API_URL = 'https://1m4c74owqj.execute-api.eu-west-2.amazonaws.com/Prod';
 
 const ActivitiesContent = () => {
@@ -120,7 +120,7 @@ const ActivitiesContent = () => {
     }
 
     const apiUrl = process.env.NEXT_PUBLIC_ACTIVITIES_API_URL ||
-      (PRODUCTION_HOSTS.has(window.location.hostname)
+      (isProductionActivityHost(window.location.hostname)
         ? PRODUCTION_ACTIVITIES_API_URL
         : process.env.NEXT_PUBLIC_API_URL);
     const controller = new AbortController();
